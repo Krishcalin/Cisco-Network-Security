@@ -663,26 +663,13 @@ def detect_version(raw_text: str, device_type: str) -> Optional[str]:
 
 
 def _normalize_device_type(detected: str) -> str:
-    """Map ParsedConfig.device_type to the keys used in CVE entries' platforms."""
-    # ParsedConfig._detect_type returns: ftd, nxos, wlc, iosxe, ios.
-    # ASA configs are auto-detected as 'ios' or 'iosxe' today since the parser
-    # has no specific marker. The CVE check disambiguates via the raw text below.
+    """Map ParsedConfig.device_type to the keys used in CVE entries' platforms.
+
+    ASA disambiguation is now done centrally in ParsedConfig._detect_type
+    (which recognises ASA-specific tokens before falling through to IOS),
+    so no extra remapping is required here.
+    """
     return detected
-
-
-def _looks_like_asa(raw_text: str) -> bool:
-    """Heuristic to detect ASA running-config (distinct from IOS/IOS-XE)."""
-    asa_markers = [
-        r"^\s*ASA\s+Version\s+\d",
-        r"^names$",
-        r"^interface\s+(GigabitEthernet|TenGigabitEthernet)\d+/\d+\s*$",
-        r"^webvpn\b",
-        r"^anyconnect\b",
-        r"^tunnel-group\s+",
-        r"^access-list\s+\S+\s+extended\s+",
-    ]
-    rx = re.compile("|".join(asa_markers), re.IGNORECASE | re.MULTILINE)
-    return bool(rx.search(raw_text))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -694,12 +681,6 @@ class CveDetectionAuditor(BaseAuditor):
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
         device_type = _normalize_device_type(self.config.device_type)
-
-        # ASA disambiguation: ParsedConfig calls ASA configs 'ios' or 'iosxe'
-        # because the parser has no explicit marker. Re-classify here.
-        if device_type in ("ios", "iosxe") and _looks_like_asa(self.config.raw):
-            device_type = "asa"
-
         train = detect_version(self.config.raw, device_type)
 
         if not train:

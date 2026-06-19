@@ -24,7 +24,16 @@ class ServicesProtocolsAuditor(BaseAuditor):
         ("ip domain-lookup", "DNS lookup on typos can delay CLI operations"),
     ]
 
+    # The "dangerous services" list (ip finger, bootp, identd, service pad,
+    # tcp/udp small-servers, service config) is IOS / IOS-XE only. NX-OS uses
+    # 'feature' to enable services; ASA/FTD have a fixed service set. SNMP
+    # checks look for IOS-format 'snmp-server community' lines that NX-OS
+    # writes differently and ASA writes as 'snmp-server host inside ... community'.
+    SUPPORTED_PLATFORMS = {"ios", "iosxe", "wlc"}
+
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("Services & Protocols")
         self.check_unused_services()
         self.check_snmp_version()
         self.check_snmp_community()

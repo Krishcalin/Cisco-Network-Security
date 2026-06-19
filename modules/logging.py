@@ -11,8 +11,15 @@ from modules.base import BaseAuditor
 
 
 class LoggingMonitoringAuditor(BaseAuditor):
+    # 'logging host' / 'logging trap' / 'logging source-interface' / 'archive'
+    # are IOS / IOS-XE syntax. NX-OS uses 'logging server' which the syslog
+    # check already accepts. ASA uses 'logging host inside ...' (different
+    # parser path); FTD logging is via FMC. Catalyst 9800 WLC inherits IOS-XE.
+    SUPPORTED_PLATFORMS = {"ios", "iosxe", "nxos", "wlc"}
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("Logging & Monitoring")
         self.check_syslog_server()
         self.check_logging_level()
         self.check_buffered_logging()

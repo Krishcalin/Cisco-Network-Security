@@ -11,8 +11,14 @@ from modules.base import BaseAuditor
 
 
 class NgfwCoreAuditor(BaseAuditor):
+    # NGFW-specific checks (access-control policies, IPS, AMP, Security
+    # Intelligence, URL filtering, SSL inspection, rule logging, any/any
+    # detection) apply only to firewall platforms.
+    SUPPORTED_PLATFORMS = {"ftd", "asa"}
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("NGFW Core")
         self.check_default_action()
         self.check_ips_policy()
         self.check_malware_protection()

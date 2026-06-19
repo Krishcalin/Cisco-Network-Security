@@ -24,8 +24,15 @@ from modules.base import BaseAuditor
 
 
 class ManagementPlaneAuditor(BaseAuditor):
+    # IOS-syntax checks (enable secret, aaa new-model, service password-encryption,
+    # ip ssh, line vty). NX-OS uses role-based AAA and has SSHv2-only by default;
+    # ASA uses 'enable password' natively and has different mgmt syntax; FTD is
+    # managed via FMC. Catalyst 9800 WLC is IOS-XE based so it is supported.
+    SUPPORTED_PLATFORMS = {"ios", "iosxe", "wlc"}
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("Management Plane")
         self.check_enable_secret()
         self.check_password_encryption()
         self.check_type7_passwords()

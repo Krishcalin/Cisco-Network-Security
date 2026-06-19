@@ -10,8 +10,14 @@ from modules.base import BaseAuditor
 
 
 class SwitchSecurityAuditor(BaseAuditor):
+    # Switchport checks (port-security, native VLAN, DTP, BPDU guard, IP source
+    # guard) are IOS / IOS-XE Catalyst syntax. NX-OS has switchports but uses
+    # different feature flags; ASA/FTD/WLC aren't L2 switches.
+    SUPPORTED_PLATFORMS = {"ios", "iosxe"}
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("Switch Security")
         self.check_port_security()
         self.check_trunk_native_vlan()
         self.check_dtp_negotiation()

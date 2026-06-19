@@ -10,10 +10,16 @@ from modules.base import BaseAuditor
 
 
 class WirelessSecurityAuditor(BaseAuditor):
+    # WLC (AireOS / Catalyst 9800). IOS-XE included because C9800 configs
+    # can sometimes be classified as iosxe when the wireless markers are
+    # less distinctive.
+    SUPPORTED_PLATFORMS = {"wlc", "iosxe"}
 
     WEAK_ENCRYPTION = ["wep", "open", "tkip", "wpa "]  # WPA1 without 2
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("Wireless Security")
         self.check_ssid_encryption()
         self.check_wpa_version()
         self.check_psk_strength()

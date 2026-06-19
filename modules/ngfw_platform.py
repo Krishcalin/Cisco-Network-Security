@@ -11,8 +11,14 @@ from modules.base import BaseAuditor
 
 
 class NgfwPlatformAuditor(BaseAuditor):
+    # FTD-specific platform hardening (FXOS, DNS inspection, management
+    # interface, geolocation updates). Already had per-check 'if device_type
+    # != "ftd": return' guards, but emitting a single skip notice is clearer.
+    SUPPORTED_PLATFORMS = {"ftd"}
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("NGFW Platform")
         self.check_management_access()
         self.check_user_accounts()
         self.check_fxos_version()

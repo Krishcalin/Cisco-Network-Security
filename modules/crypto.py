@@ -13,8 +13,14 @@ class CryptoPostureAuditor(BaseAuditor):
 
     WEAK_CIPHERS_SSH = ["aes128-cbc", "3des-cbc", "arcfour", "blowfish"]
     WEAK_HMACS = ["hmac-md5", "hmac-sha1-96", "hmac-md5-96"]
+    # Crypto config syntax (crypto key generate rsa, crypto isakmp policy,
+    # crypto ipsec transform-set) is IOS / IOS-XE. NX-OS, ASA and FTD use
+    # different commands.
+    SUPPORTED_PLATFORMS = {"ios", "iosxe", "wlc"}
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("Cryptographic Posture")
         self.check_ssh_key_size()
         self.check_ssh_ciphers()
         self.check_tls_version()

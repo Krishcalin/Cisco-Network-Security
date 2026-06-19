@@ -8,12 +8,36 @@ import datetime
 from typing import Dict, List, Any, Optional, Set, Tuple
 
 
+# ASA running-config tokens (used by _detect_type below). ASA configs were
+# previously mis-classified as IOS because there was no explicit marker, which
+# caused the IOS-only mgmt/services/data/switch modules to fire on ASA and
+# produce false positives.
+_ASA_MARKERS = re.compile(
+    r"^\s*ASA\s+Version\s+\d"
+    r"|^names\s*$"
+    r"|^webvpn\s*$"
+    r"|^anyconnect\b"
+    r"|^tunnel-group\s+"
+    r"|^nameif\s+"
+    r"|^access-list\s+\S+\s+extended\s+",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
 class BaseAuditor:
     SEVERITY_CRITICAL = "CRITICAL"
     SEVERITY_HIGH = "HIGH"
     SEVERITY_MEDIUM = "MEDIUM"
     SEVERITY_LOW = "LOW"
     SEVERITY_INFO = "INFO"
+
+    # Set on subclasses to restrict the auditor to specific device types.
+    # None = run on every device. Otherwise a set/frozenset of device_type
+    # strings the parser produces: "ios", "iosxe", "nxos", "asa", "ftd", "wlc".
+    # Modules without a guard previously fired IOS-syntax checks against ASA,
+    # NX-OS, FTD and WLC configs and produced false positives (e.g. flagging
+    # ASA for missing 'enable secret' or NX-OS for missing 'aaa new-model').
+    SUPPORTED_PLATFORMS: Optional[Set[str]] = None
 
     def __init__(self, config: 'ParsedConfig', baseline: Dict = None):
         self.config = config
@@ -35,6 +59,38 @@ class BaseAuditor:
         }
         self.findings.append(f)
         return f
+
+    def supports_platform(self) -> bool:
+        """Return False if SUPPORTED_PLATFORMS is set and excludes this device.
+
+        Subclasses call this at the top of run_all_checks(); on False they
+        emit a META-INFO finding via _emit_skip_notice() and return early.
+        """
+        if self.SUPPORTED_PLATFORMS is None:
+            return True
+        return self.config.device_type in self.SUPPORTED_PLATFORMS
+
+    def _emit_skip_notice(self, category: str) -> List[Dict[str, Any]]:
+        """Emit an INFO finding noting this module was skipped for this device.
+
+        Operators see the skip in the report so an absent finding doesn't get
+        misread as a clean bill of health.
+        """
+        plats = ", ".join(sorted(self.SUPPORTED_PLATFORMS)) if self.SUPPORTED_PLATFORMS else "any"
+        self.finding(
+            check_id=f"{category.split()[0].upper()}-META-001",
+            title=f"{category} checks skipped for platform '{self.config.device_type}'",
+            severity=self.SEVERITY_INFO,
+            category=category,
+            description=(
+                f"This module's checks are written for {plats}. The device "
+                f"{self.config.hostname} is detected as {self.config.device_type}, "
+                f"so these checks were skipped to avoid false positives. "
+                f"Run a platform-appropriate module instead."
+            ),
+            remediation="If you believe this platform should be supported, file an issue with a sample config.",
+        )
+        return self.findings
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
         raise NotImplementedError
@@ -61,6 +117,11 @@ class ParsedConfig:
         raw_upper = self.raw.upper()
         if "FIREPOWER" in raw_upper or "FTD" in raw_upper or "ACCESS-CONTROL" in raw_upper:
             return "ftd"
+        # ASA detection must come before IOS-XE / IOS — ASA configs share
+        # surface syntax with IOS (interface, access-list) but use distinct
+        # tokens like 'ASA Version', 'webvpn', 'tunnel-group', 'nameif'.
+        if _ASA_MARKERS.search(self.raw):
+            return "asa"
         if "FEATURE" in raw_upper and "NX-OS" in raw_upper:
             return "nxos"
         if "AP GROUP" in raw_upper or "WLAN" in raw_upper and "SSID" in raw_upper:

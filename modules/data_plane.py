@@ -11,8 +11,14 @@ from modules.base import BaseAuditor
 
 
 class DataPlaneAuditor(BaseAuditor):
+    # IOS / IOS-XE interface and L2 syntax (ip verify unicast reverse-path,
+    # ip dhcp snooping, ip arp inspection, no ip directed-broadcast, etc.).
+    # NX-OS uses different commands; ASA/FTD don't run these features.
+    SUPPORTED_PLATFORMS = {"ios", "iosxe", "wlc"}
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("Data Plane")
         self.check_urpf()
         self.check_dhcp_snooping()
         self.check_arp_inspection()

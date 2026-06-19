@@ -11,8 +11,13 @@ from modules.base import BaseAuditor
 
 
 class ControlPlaneAuditor(BaseAuditor):
+    # IOS / IOS-XE syntax. NX-OS uses 'feature' + similar but distinct syntax;
+    # ASA/FTD don't run dynamic routing the same way; WLC inherits IOS-XE.
+    SUPPORTED_PLATFORMS = {"ios", "iosxe", "wlc"}
 
     def run_all_checks(self) -> List[Dict[str, Any]]:
+        if not self.supports_platform():
+            return self._emit_skip_notice("Control Plane")
         self.check_copp()
         self.check_routing_auth()
         self.check_ntp_authentication()

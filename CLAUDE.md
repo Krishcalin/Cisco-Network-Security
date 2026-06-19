@@ -36,13 +36,22 @@ nss_scanner.py                 # CLI entry, MODULE_MAP, run loop
 
 ## Auditor Pattern
 
-Every check module subclasses `BaseAuditor` and implements `run_all_checks()`:
+Every check module subclasses `BaseAuditor`, declares its `SUPPORTED_PLATFORMS`,
+and implements `run_all_checks()`:
 
 ```python
 from modules.base import BaseAuditor
 
 class MyAuditor(BaseAuditor):
+    # Restrict to specific device types. Without this guard, IOS-syntax
+    # checks would fire against ASA / NX-OS / FTD / WLC and produce
+    # false positives (e.g. flagging ASA for missing 'enable secret' or
+    # NX-OS for missing 'aaa new-model'). Leave None to run everywhere.
+    SUPPORTED_PLATFORMS = {"ios", "iosxe", "wlc"}
+
     def run_all_checks(self):
+        if not self.supports_platform():
+            return self._emit_skip_notice("My Category")
         self.check_a()
         self.check_b()
         return self.findings
@@ -90,8 +99,10 @@ any future export sink (JSON, CSV) reads from these:
 
 `modules/base.py:ParsedConfig` ingests a raw config string and exposes:
 
-- `device_type` — auto-detected: `ios` / `iosxe` / `nxos` / `ftd` / `wlc`
-  (no specific ASA marker — the CVE module re-classifies via a heuristic).
+- `device_type` — auto-detected: `ios` / `iosxe` / `nxos` / `asa` / `ftd` / `wlc`.
+  ASA detection looks for distinctive tokens (`ASA Version`, `webvpn`, `names`,
+  `anyconnect`, `tunnel-group`, `nameif`, extended ACL syntax) before falling
+  through to IOS/IOS-XE classification.
 - `hostname` — parsed from `hostname X`.
 - `_sections` — top-level config sections (interface, line, router, snmp-server, …).
 - Helper methods: `has_line(regex)`, `find_lines(regex)`, `get_value(regex, group)`,
@@ -186,8 +197,11 @@ coverage even when no CVEs match:
 | `wlc_9800_outdated.cfg` | WLC (IOS-XE) | 17.9 | AP image download RCE, WLC auth bypass, CAPWAP DTLS DoS |
 | `ftd_firewall.cfg` | FTD | 7.2 | ArcaneDoor trio, FTD-specific checks |
 
-Running all modules across all samples produces ~290 findings (21 CRITICAL,
-95 HIGH, 121 MEDIUM, 50 LOW) — a useful end-to-end smoke test.
+Running all modules across all samples produces 246 findings (17 CRITICAL,
+78 HIGH, 81 MEDIUM, 33 LOW, 37 INFO meta-notices marking modules skipped due
+to platform mismatch) — a useful end-to-end smoke test. The 37 INFO entries
+are the cross-platform skip notices: e.g. switch-security and IOS-mgmt
+modules correctly skipped on ASA/NX-OS/FTD samples.
 
 ## Development Guidelines
 
