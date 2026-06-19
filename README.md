@@ -11,7 +11,8 @@
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen?style=flat-square"/>
   <img src="https://img.shields.io/badge/license-MIT-orange?style=flat-square"/>
   <img src="https://img.shields.io/badge/Cisco-IOS%20%7C%20IOS--XE%20%7C%20NX--OS%20%7C%20FTD-blue?style=flat-square&logo=cisco&logoColor=white"/>
-  <img src="https://img.shields.io/badge/checks-128%2B-red?style=flat-square"/>
+  <img src="https://img.shields.io/badge/checks-168%2B-red?style=flat-square"/>
+  <img src="https://img.shields.io/badge/CVEs-40-critical?style=flat-square"/>
 </p>
 
 ---
@@ -21,10 +22,11 @@
 **Network Security Scanner (NSS)** parses Cisco device running-config exports and evaluates them against security baselines from CIS Benchmarks, Cisco hardening guides, and NSA Firepower guidance. It produces an interactive HTML dashboard with findings, severity ratings, and actionable remediation commands.
 
 - **Offline config analysis** — no SNMP, SSH, or API access to devices required
-- **Multi-device** — scan router, switch, WAP, and NGFW configs in one run
+- **Multi-device** — scan router, switch, WAP, ASA, FTD, Nexus, and WLC configs in one run
 - **Zero dependencies** — Python 3.8+ stdlib only
-- **128+ security checks** across 10 audit modules
+- **168+ security checks** across 11 audit modules (128 hardening + 40 CVE matches)
 - **CIS Benchmark aligned** — mapped to CIS Cisco IOS/IOS-XE and FTD benchmarks
+- **CVE Detection** — 40 curated Cisco PSIRT advisories (2018–2026) with auto version-train matching across IOS, IOS-XE, NX-OS, ASA, FTD, WLC
 
 ---
 
@@ -40,7 +42,7 @@
 
 ---
 
-## Audit Modules (10)
+## Audit Modules (11)
 
 | Module | Key | Checks | Focus |
 |--------|-----|--------|-------|
@@ -54,6 +56,7 @@
 | 🔑 **NGFW Platform** | `ngfwplat` | 7 | FTD mgmt access, accounts, FXOS version, DNS inspection |
 | 📊 **Logging & Monitoring** | `logging` | 10 | Syslog, buffered logging, SNMP traps, NetFlow, archive |
 | 🔐 **Cryptographic** | `crypto` | 10 | SSH keys, ciphers, TLS versions, IPsec, ISAKMP, DH groups |
+| 🚨 **CVE Detection** | `cve` | 40 | Published Cisco PSIRT advisories — ArcaneDoor, BadCandy, Velvet Ant, SNMP RCE, WLC AP-image RCE |
 
 ---
 
@@ -110,8 +113,41 @@ ngfw      — NGFW Core (access control, IPS, AMP, SI, SSL inspection)
 ngfwplat  — NGFW Platform (FTD management, accounts, updates)
 logging   — Logging & Monitoring (syslog, SNMP traps, NetFlow)
 crypto    — Cryptographic Posture (SSH keys, TLS, IPsec, ISAKMP)
+cve       — CVE Detection (auto version-train match against Cisco PSIRT database)
 all       — Run everything (default)
 ```
+
+---
+
+## CVE Detection
+
+The `cve` module matches the device's detected software version against a
+curated database of 40 published Cisco PSIRT advisories (2018–2026) covering:
+
+| Platform | Headline CVEs |
+|----------|---------------|
+| **ASA / FTD** | ArcaneDoor trio (CVE-2025-20333 / 20362 / 20363), persistent local RCE (CVE-2024-20359), WebVPN path traversal (CVE-2020-3452), info-disclosure (CVE-2020-3259), WebVPN double-free (CVE-2018-0101) |
+| **IOS / IOS-XE** | BadCandy chain (CVE-2023-20198 + 20273), SNMP RCE (CVE-2025-20352), Wireless AP-image RCE (CVE-2025-20188), GET VPN RCE (CVE-2023-20109) |
+| **NX-OS** | Velvet Ant CLI injection (CVE-2024-20399), Python / Bash sandbox escapes (CVE-2024-20271 / 20272), image-signature bypass |
+| **WLC** | Catalyst 9800 auth bypass (CVE-2022-20695), IPv6 DoS, CAPWAP DTLS DoS |
+
+Version detection works on the `show version` output included in the config
+file (`Cisco IOS XE Software, Version 17.09.04` → train `17.9`; `ASA Version
+9.18(2)` → train `9.18`; `Cisco Nexus Operating System (NX-OS) Software,
+Version 9.3(11)` → train `9.3`). Make sure to **append `show version`** to
+your exported running-config so the CVE module can match.
+
+KEV-listed and actively-exploited CVEs are flagged with a `[KEV-listed]` or
+`[actively exploited]` tag in the finding title for prioritisation. Each
+finding links to the canonical Cisco PSIRT advisory URL so operators can
+resolve the exact patch-level fixed version via Cisco's Software Checker.
+
+**Precision note** — the database uses `major.minor` train granularity (e.g.
+`"17.9"`, `"9.18"`) rather than full patch versions. Cisco PSIRT advisory
+pages render the "first fixed release" table via JavaScript so the exact
+patch-level vulnerability window can't be reliably scraped at scanner build
+time. The auditor therefore flags any device running an affected train and
+relies on the linked advisory for patch-precise upgrade guidance.
 
 ---
 
@@ -132,11 +168,16 @@ Network-Security-Scanner-NSS/
 │   ├── ngfw_platform.py           # NGFW platform checks
 │   ├── logging.py                 # Logging & Monitoring checks
 │   ├── crypto.py                  # Cryptographic posture checks
+│   ├── cve_detection.py           # 40 published Cisco PSIRT CVEs + version matcher
 │   └── report_generator.py        # HTML dashboard generator
-├── sample_configs/                 # Demo device configs
-│   ├── router_core.cfg
-│   ├── switch_access.cfg
-│   ├── ftd_firewall.cfg
+├── sample_configs/                 # Demo device configs (7 devices, ~290 findings)
+│   ├── router_core.cfg            # IOS 15.7 router with classic hardening gaps
+│   ├── switch_access.cfg          # IOS access switch with switching weaknesses
+│   ├── catalyst_9300_outdated.cfg # IOS-XE 17.9 — BadCandy + SNMP RCE + AP-image RCE
+│   ├── nexus_9k_outdated.cfg      # NX-OS 9.3 — Velvet Ant + Python/Bash escapes
+│   ├── asa_5516_outdated.cfg      # ASA 9.18 — ArcaneDoor trio + WebVPN exposed
+│   ├── wlc_9800_outdated.cfg      # WLC 17.9 — AP-image RCE + WLC auth bypass
+│   ├── ftd_firewall.cfg           # FTD 7.2 — ArcaneDoor trio + FTD-specific
 │   └── sample_report.html
 ├── docs/
 │   └── banner.svg

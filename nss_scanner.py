@@ -19,6 +19,17 @@ import sys
 import datetime
 from pathlib import Path
 
+# Reconfigure stdout/stderr to UTF-8 with errors='replace' so the banner's
+# box-drawing characters (╔ ═ ║ ╚) and any non-ASCII finding text don't crash
+# Windows consoles that default to cp1252.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        try:
+            _reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
 from modules.base import load_configs
 from modules.mgmt_plane import ManagementPlaneAuditor
 from modules.ctrl_plane import ControlPlaneAuditor
@@ -30,6 +41,7 @@ from modules.ngfw_core import NgfwCoreAuditor
 from modules.ngfw_platform import NgfwPlatformAuditor
 from modules.logging import LoggingMonitoringAuditor
 from modules.crypto import CryptoPostureAuditor
+from modules.cve_detection import CveDetectionAuditor
 from modules.report_generator import ReportGenerator
 
 
@@ -54,6 +66,7 @@ MODULE_MAP = {
     "ngfwplat": ("NGFW Platform Security", NgfwPlatformAuditor),
     "logging":  ("Logging & Monitoring", LoggingMonitoringAuditor),
     "crypto":   ("Cryptographic Posture", CryptoPostureAuditor),
+    "cve":      ("CVE Detection", CveDetectionAuditor),
 }
 
 
