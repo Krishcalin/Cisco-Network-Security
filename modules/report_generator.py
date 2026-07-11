@@ -66,7 +66,9 @@ class ReportGenerator:
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Network Security — Network Device Security Audit</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap');
+  /* Self-contained: no external font/CDN fetch, so the report renders identically
+     offline / air-gapped. Preferred faces are used when installed locally, otherwise
+     the stack falls back cleanly to platform system fonts. */
 
   :root {{
     --bg-primary: #0a0e17;
@@ -89,8 +91,8 @@ class ReportGenerator:
     --low-bg: rgba(34, 197, 94, 0.08);
     --info-c: #10b981;
     --info-bg: rgba(56, 189, 248, 0.08);
-    --font-sans: 'DM Sans', -apple-system, sans-serif;
-    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SF Mono', Menlo, Consolas, 'Fira Code', 'Liberation Mono', monospace;
   }}
 
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
