@@ -58,7 +58,7 @@ _RE_IFACE = re.compile(
     r"TwentyFiveGigE|Ethernet|Port-channel|Loopback|Tunnel|Serial|Management|Vlan|"
     r"Gi|Te|Fa|Eth|Po|Lo|Tu|Se|Mgmt|Vl)\d[\w./:-]*)", re.IGNORECASE)
 # A VTY / console / aux line spec: "line vty 0 4", "line con 0".
-_RE_LINE = re.compile(r"\bline\s+(vty|con(?:sole)?|aux|tty)\s+([\d ]+?)(?=[,;]|\s+\w+=|$)", re.IGNORECASE)
+_RE_LINE = re.compile(r"\bline\s+(vty|con(?:sole)?|aux|tty)\s+(\d+(?:\s+\d+)?)", re.IGNORECASE)
 # A local username.
 _RE_USER = re.compile(r"\busername\s+(\S+)", re.IGNORECASE)
 # An ACL name or number.
