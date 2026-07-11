@@ -15,6 +15,15 @@ class ReportGenerator:
     def __init__(self, findings: List[Dict[str, Any]], meta: Dict[str, Any]):
         self.findings = findings
         self.meta = meta
+        # Detailed remediation knowledge base — supplies the long-form observation,
+        # step-by-step fix, verify/rollback/impact per check_id. Optional: if it can't
+        # load, findings fall back to their own description/remediation.
+        self._kb = None
+        try:
+            from remediation_kb import RemediationKB
+            self._kb = RemediationKB()
+        except Exception:
+            self._kb = None
 
     def generate(self, output_path: str):
         """Generate complete HTML report."""
@@ -525,6 +534,90 @@ class ReportGenerator:
     line-height: 1.7;
   }}
 
+  /* Detailed observation prose */
+  .observation-text {{
+    font-size: 0.825rem;
+    color: var(--text-secondary);
+    line-height: 1.75;
+  }}
+  .observation-text p {{ margin: 0 0 0.65rem; }}
+  .observation-text p:last-child {{ margin-bottom: 0; }}
+
+  /* Step-by-step remediation */
+  .step-list {{
+    margin: 0;
+    padding-left: 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }}
+  .step-list li {{
+    font-size: 0.825rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    padding-left: 0.25rem;
+  }}
+  .step-list li::marker {{
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }}
+
+  /* CLI / verify code blocks */
+  .code-block {{
+    background: #05070d;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 0.8rem 1rem;
+    margin: 0;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: #cfe3ff;
+    white-space: pre;
+    tab-size: 2;
+  }}
+  .verify-block {{
+    border-left-color: #818cf8;
+    color: #d7dcff;
+  }}
+  .finding-section code {{
+    font-family: var(--font-mono);
+    font-size: 0.78em;
+    background: rgba(129, 140, 248, 0.12);
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    color: #cfe3ff;
+  }}
+
+  /* Rollback / impact callouts */
+  .callout {{
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.65rem;
+    align-items: start;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.65;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    padding: 0.6rem 0.85rem;
+  }}
+  .callout .callout-label {{
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    white-space: nowrap;
+    padding-top: 0.1rem;
+  }}
+  .callout.impact {{ border-left: 3px solid var(--medium); }}
+  .callout.rollback {{ border-left: 3px solid var(--text-muted); }}
+
   /* Footer */
   .footer {{
     margin-top: 3rem;
@@ -667,63 +760,139 @@ window.addEventListener('beforeprint', () => {{
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(report)
 
+    # ── rich-text helpers ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _inline(text: str) -> str:
+        """Escape, then render `backtick` spans as inline <code>."""
+        import re
+        out, last = [], 0
+        for m in re.finditer(r"`([^`]+)`", str(text)):
+            out.append(html.escape(text[last:m.start()]))
+            out.append(f"<code>{html.escape(m.group(1))}</code>")
+            last = m.end()
+        out.append(html.escape(str(text)[last:]))
+        return "".join(out)
+
+    def _prose(self, text: str) -> str:
+        """Multi-paragraph prose: split on blank lines (or single newlines) into <p>."""
+        text = str(text or "").strip()
+        if not text:
+            return ""
+        blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
+        if len(blocks) <= 1:
+            blocks = [b.strip() for b in text.split("\n") if b.strip()] or [text]
+        return "".join(f"<p>{self._inline(b)}</p>" for b in blocks)
+
+    def _section(self, title: str, inner: str) -> str:
+        if not inner:
+            return ""
+        return (f'<div class="finding-section"><div class="finding-section-title">'
+                f'{html.escape(title)}</div>{inner}</div>')
+
     def _render_findings(self) -> str:
-        """Render all findings as HTML cards."""
-        # Sort by severity
+        """Render all findings as HTML cards, enriched from the remediation KB
+        (detailed observation, step-by-step remediation, CLI, verify, rollback,
+        operational impact) with graceful fallback to the finding's own fields."""
         order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
         sorted_findings = sorted(self.findings, key=lambda f: order.get(f["severity"], 4))
 
         parts = []
         for f in sorted_findings:
+            detail = {}
+            if self._kb is not None:
+                try:
+                    detail = self._kb.detail_for(f) or {}
+                except Exception:
+                    detail = {}
+            detailed = bool(detail.get("_detailed"))
+
+            # ── Observation (long-form; KB 'risk' else the finding description) ──
+            observation = detail.get("risk") or f.get("description", "")
+            obs_html = self._section(
+                "Observation",
+                f'<div class="observation-text">{self._prose(observation)}</div>')
+
+            # ── Affected items ──
             affected_html = ""
             if f.get("affected_items"):
-                items = "".join(
-                    f"<li>{html.escape(str(item))}</li>"
-                    for item in f["affected_items"][:50]  # Cap at 50 for readability
-                )
-                overflow = ""
+                items = "".join(f"<li>{html.escape(str(i))}</li>"
+                                for i in f["affected_items"][:50])
                 if len(f["affected_items"]) > 50:
-                    overflow = f"<li>... and {len(f['affected_items']) - 50} more</li>"
-                affected_html = f"""
-                <div class="finding-section">
-                  <div class="finding-section-title">Affected Items ({f['affected_count']})</div>
-                  <ul class="affected-list">{items}{overflow}</ul>
-                </div>"""
+                    items += f"<li>... and {len(f['affected_items']) - 50} more</li>"
+                affected_html = self._section(
+                    f"Affected configuration ({f.get('affected_count', len(f['affected_items']))})",
+                    f'<ul class="affected-list">{items}</ul>')
 
+            # ── Remediation: step-by-step (KB) else the short remediation string ──
+            steps = detail.get("steps") if detailed else None
+            if steps:
+                li = "".join(f"<li>{self._inline(s)}</li>" for s in steps if str(s).strip())
+                remediation_html = self._section(
+                    "Remediation — step by step", f'<ol class="step-list">{li}</ol>')
+            else:
+                rem = f.get("remediation") or detail.get("steps")
+                rem_txt = rem[0] if isinstance(rem, list) and rem else (rem if isinstance(rem, str) else "")
+                remediation_html = self._section(
+                    "Remediation",
+                    f'<div class="remediation-text">{self._inline(rem_txt)}</div>' if rem_txt else "")
+
+            # ── CLI / verify / rollback / impact ──
+            cli = detail.get("cli") if detailed else ""
+            cli_html = self._section(
+                "Configuration commands",
+                f'<pre class="code-block">{html.escape(str(cli))}</pre>' if cli else "")
+            verify = detail.get("verify") if detailed else ""
+            verify_html = self._section(
+                "Verification",
+                f'<pre class="code-block verify-block">{html.escape(str(verify))}</pre>' if verify else "")
+            impact = detail.get("impact") if detailed else ""
+            impact_html = ""
+            if impact:
+                impact_html = (f'<div class="finding-section"><div class="callout impact">'
+                               f'<span class="callout-label">Operational impact</span>'
+                               f'<span>{self._inline(impact)}</span></div></div>')
+            rollback = detail.get("rollback") if detailed else ""
+            rollback_html = ""
+            if rollback:
+                rollback_html = (f'<div class="finding-section"><div class="callout rollback">'
+                                 f'<span class="callout-label">Rollback</span>'
+                                 f'<span>{self._inline(rollback)}</span></div></div>')
+
+            # ── References (merge KB + finding, de-duped, order-preserving) ──
+            refs = []
+            for r in (f.get("references") or []):
+                if r and r not in refs:
+                    refs.append(r)
+            for r in (detail.get("references") or []):
+                if r and r not in refs:
+                    refs.append(r)
             refs_html = ""
-            if f.get("references"):
-                ref_items = "".join(
-                    f"<li>{html.escape(r)}</li>" for r in f["references"]
-                )
-                refs_html = f"""
-                <div class="finding-section">
-                  <div class="finding-section-title">References</div>
-                  <ul class="ref-list">{ref_items}</ul>
-                </div>"""
+            if refs:
+                ref_items = "".join(f"<li>{html.escape(str(r))}</li>" for r in refs)
+                refs_html = self._section("References", f'<ul class="ref-list">{ref_items}</ul>')
 
-            remediation_html = ""
-            if f.get("remediation"):
-                remediation_html = f"""
-                <div class="finding-section">
-                  <div class="finding-section-title">Remediation</div>
-                  <div class="remediation-text">{html.escape(f['remediation'])}</div>
-                </div>"""
+            device_tag = ""
+            if f.get("device"):
+                device_tag = f'<span class="finding-id">{html.escape(str(f["device"]))}</span>'
 
             parts.append(f"""
     <div class="finding-card" data-severity="{html.escape(f['severity'])}" data-category="{html.escape(f['category'])}">
       <div class="finding-header">
         <span class="sev-badge {html.escape(f['severity'])}">{html.escape(f['severity'])}</span>
         <span class="finding-title">{html.escape(f['title'])}</span>
+        {device_tag}
         <span class="finding-id">{html.escape(f['check_id'])}</span>
         <span class="finding-chevron">&#9654;</span>
       </div>
       <div class="finding-body">
-        <div class="finding-section">
-          <div class="finding-section-title">Description</div>
-          <p>{html.escape(f['description'])}</p>
-        </div>
+        {obs_html}
         {affected_html}
         {remediation_html}
+        {cli_html}
+        {verify_html}
+        {impact_html}
+        {rollback_html}
         {refs_html}
       </div>
     </div>""")
