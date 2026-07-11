@@ -91,6 +91,10 @@ def main():
     parser.add_argument("--fail-on", dest="fail_on", default=None,
         choices=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
         help="Exit non-zero (2) if any finding at or above this severity is present (CI gating). Default: always exit 0.")
+    parser.add_argument("--history", default=None, metavar="FILE",
+        help="Continuous posture: update a system-of-record JSON and report new/resolved/reopened/SLA per device")
+    parser.add_argument("--exceptions", default=None, metavar="FILE",
+        help="Risk-acceptance file (JSON) for --history: accepted findings stop nagging until they expire (fail-open)")
 
     args = parser.parse_args()
     data_dir = Path(args.data_dir)
@@ -160,6 +164,13 @@ def main():
         _save_json(args.json_out, all_findings, scan_meta)
         print(f"[*] JSON findings report: {args.json_out}")
 
+    # Continuous posture runs on the FULL (unfiltered) finding set so a --severity
+    # display filter can never record a finding as resolved. Per device (NSS is
+    # multi-device); the returned deltas are stashed for later exporters.
+    posture_deltas = {}
+    if args.history:
+        posture_deltas = _update_posture(args.history, args.exceptions, all_findings_unfiltered)
+
     crit = sum(1 for f in all_findings if f["severity"] == "CRITICAL")
     high = sum(1 for f in all_findings if f["severity"] == "HIGH")
     med = sum(1 for f in all_findings if f["severity"] == "MEDIUM")
@@ -177,6 +188,69 @@ def main():
         if any(severity_order.get(f.get("severity", "INFO"), 4) <= gate for f in all_findings):
             print(f"[!] Findings at or above {args.fail_on} present — exiting 2 (--fail-on).")
             sys.exit(2)
+
+
+_SEV_WEIGHT = {"CRITICAL": 25, "HIGH": 10, "MEDIUM": 4, "LOW": 1}
+
+
+def _posture_host_key(findings):
+    """Return a fn mapping a finding -> a stable posture host key. Uses the device
+    hostname, but disambiguates with the config filename when the hostname is
+    'unknown' or collides across multiple files (so two boxes can't merge in the
+    system of record)."""
+    from collections import defaultdict
+    files_by_host = defaultdict(set)
+    for f in findings:
+        files_by_host[f.get("device", "unknown") or "unknown"].add(f.get("device_file", ""))
+
+    def key(f):
+        h = f.get("device", "unknown") or "unknown"
+        if h == "unknown" or len(files_by_host.get(h, ())) > 1:
+            return f"{h}|{f.get('device_file', '')}"
+        return h
+    return key
+
+
+def _update_posture(history_path, exceptions_path, findings, prio_by_id=None):
+    """Update the file-based posture store per device and print what changed.
+    prio_by_id (id(finding)->PriorityResult) drives SLA/weaponization when the
+    risk-prioritizer is available; None degrades gracefully."""
+    try:
+        from posture import PostureStore, Exceptions
+    except Exception as exc:  # pragma: no cover
+        print(f"[WARN] posture module unavailable: {exc}")
+        return {}
+    from collections import defaultdict
+    keyfn = _posture_host_key(findings)
+    groups = defaultdict(list)
+    for f in findings:
+        groups[keyfn(f)].append(f)
+    store = PostureStore(history_path)
+    exc = Exceptions.load(exceptions_path)
+    deltas = {}
+    print("\n[*] Posture update (system of record):")
+    for host, fs in sorted(groups.items()):
+        risk = min(100, sum(_SEV_WEIGHT.get(f.get("severity", ""), 0) for f in fs))
+        prio = None
+        if prio_by_id:
+            prio = [prio_by_id[id(f)] for f in fs if id(f) in prio_by_id] or None
+        d = store.update(host, fs, prio, exc, risk_score=risk)
+        deltas[host] = d
+        since = f"since {d.prev_date[:10]}" if d.prev_date else "baseline recorded"
+        line = (f"    {host}: +{len(d.new)} new  -{len(d.resolved)} resolved"
+                f"  ~{len(d.reopened)} reopened  (carried {len(d.carried)}, {since})")
+        if d.sla_breaches:
+            line += f"  [!] {len(d.sla_breaches)} SLA breach(es)"
+        if d.newly_weaponized:
+            line += f"  [!] {len(d.newly_weaponized)} newly weaponized"
+        if d.open_accepted:
+            line += f"  ({d.open_accepted} accepted-risk)"
+        print(line)
+    try:
+        store.save()
+    except OSError as exc:
+        print(f"    [WARN] could not write history '{history_path}': {exc}")
+    return deltas
 
 
 def _save_json(path, findings, scan_meta):
