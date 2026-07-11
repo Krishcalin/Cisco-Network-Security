@@ -210,14 +210,6 @@ def main():
         "device_list": [f"{fn} ({pc.hostname})" for fn, pc in configs],
     }
 
-    print(f"\n[*] Generating report: {args.output}")
-    generator = ReportGenerator(all_findings, scan_meta)
-    generator.generate(args.output)
-
-    if args.json_out:
-        _save_json(args.json_out, all_findings, scan_meta)
-        print(f"[*] JSON findings report: {args.json_out}")
-
     # CVE reachability: stamp a per-finding verdict (is the vulnerable feature enabled
     # on THIS device's config?) so the prioritizer downranks — never suppresses — a CVE
     # whose feature is off, while the CISA-KEV floor still holds. Per device (multi-device).
@@ -231,10 +223,20 @@ def main():
 
     # Risk-prioritization overlay (P1-P4). Computed on the FULL set so a --severity
     # display filter can't weaken the exposure signal; keyed by id(finding) for the
-    # posture SLA/weaponization pass and later exporters.
+    # posture SLA/weaponization pass, the HTML report tiers, and later exporters.
     prio_by_id, prio_results = _prioritize(all_findings_unfiltered)
     if args.top:
         _print_top(prio_results, args.top)
+
+    # HTML report — rendered AFTER prioritization so every finding shows its P1-P4 tier
+    # (severity x KEV/EPSS x reachability), grouped fix-first, matching the --top queue.
+    print(f"\n[*] Generating report: {args.output}")
+    generator = ReportGenerator(all_findings, scan_meta, priorities=prio_results)
+    generator.generate(args.output)
+
+    if args.json_out:
+        _save_json(args.json_out, all_findings, scan_meta)
+        print(f"[*] JSON findings report: {args.json_out}")
 
     # Continuous posture runs on the FULL (unfiltered) finding set so a --severity
     # display filter can never record a finding as resolved. Per device (NSS is

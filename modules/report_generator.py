@@ -12,7 +12,8 @@ from typing import Dict, List, Any
 
 class ReportGenerator:
 
-    def __init__(self, findings: List[Dict[str, Any]], meta: Dict[str, Any]):
+    def __init__(self, findings: List[Dict[str, Any]], meta: Dict[str, Any],
+                 priorities: "List[Any] | None" = None):
         self.findings = findings
         self.meta = meta
         # Detailed remediation knowledge base — supplies the long-form observation,
@@ -24,6 +25,32 @@ class ReportGenerator:
             self._kb = RemediationKB()
         except Exception:
             self._kb = None
+        # Risk-prioritization overlay (P1-P4). Supplied by the scanner (computed on the
+        # unfiltered set, with CVE reachability). If absent, compute here so a report
+        # generated standalone still shows tiers; degrade to none if unavailable.
+        self._prio_by_id = {}
+        self._tier_meta = {}
+        if priorities is None:
+            try:
+                from risk_prioritizer import RiskPrioritizer
+                priorities = RiskPrioritizer().prioritize(findings, context_findings=findings)
+            except Exception:
+                priorities = []
+        try:
+            from risk_prioritizer import TIER_META
+            self._tier_meta = TIER_META
+        except Exception:
+            self._tier_meta = {}
+        for p in (priorities or []):
+            fnd = getattr(p, "finding", None)
+            if fnd is not None:
+                self._prio_by_id[id(fnd)] = p
+
+    _TIER_RANK = {"P1": 0, "P2": 1, "P3": 2, "P4": 3}
+
+    def _tier_of(self, f):
+        """Return the PriorityResult for a finding, or None."""
+        return self._prio_by_id.get(id(f))
 
     def generate(self, output_path: str):
         """Generate complete HTML report."""
@@ -42,6 +69,14 @@ class ReportGenerator:
         med = by_severity.get("MEDIUM", 0)
         low = by_severity.get("LOW", 0)
         info = by_severity.get("INFO", 0)
+
+        # Priority tier counts (P1-P4) over the displayed findings.
+        tier_counts = {"P1": 0, "P2": 0, "P3": 0, "P4": 0}
+        for f in self.findings:
+            pr = self._tier_of(f)
+            if pr is not None and getattr(pr, "tier", None) in tier_counts:
+                tier_counts[pr.tier] += 1
+        priority_html = self._render_priority_section(tier_counts)
 
         # Risk score (weighted)
         risk_score = min(100, crit * 25 + high * 10 + med * 4 + low * 1)
@@ -435,6 +470,71 @@ class ReportGenerator:
   .sev-badge.LOW {{ background: var(--low-bg); color: var(--low); border: 1px solid rgba(34,197,94,0.2); }}
   .sev-badge.INFO {{ background: var(--info-bg); color: var(--info-c); border: 1px solid rgba(56,189,248,0.2); }}
 
+  /* ── Priority tiers (P1–P4) ─────────────────────────────────────────────── */
+  .prio-section {{ margin: 1.5rem 0; }}
+  .prio-sub {{
+    font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6;
+    margin: -0.25rem 0 1rem;
+  }}
+  .prio-grid {{
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.9rem;
+  }}
+  .tier-card {{
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1rem 1.1rem; border-top: 3px solid var(--text-muted);
+  }}
+  .tier-card .tier-top {{ display: flex; align-items: baseline; gap: 0.5rem; }}
+  .tier-card .tier-id {{ font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; font-family: var(--font-mono); }}
+  .tier-card .tier-n {{ font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }}
+  .tier-card .tier-lab {{
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-secondary); font-weight: 700; margin-top: 0.35rem;
+  }}
+  .tier-card .tier-win {{ font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem; }}
+  .tier-card.P1 {{ border-top-color: var(--critical); }} .tier-card.P1 .tier-id {{ color: var(--critical); }}
+  .tier-card.P2 {{ border-top-color: var(--high); }} .tier-card.P2 .tier-id {{ color: var(--high); }}
+  .tier-card.P3 {{ border-top-color: var(--medium); }} .tier-card.P3 .tier-id {{ color: var(--medium); }}
+  .tier-card.P4 {{ border-top-color: var(--low); }} .tier-card.P4 .tier-id {{ color: var(--low); }}
+  @media (max-width: 720px) {{ .prio-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+
+  /* Per-finding priority badge (tier · score) */
+  .p-badge {{
+    font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700;
+    padding: 0.25rem 0.5rem; border-radius: 4px; flex-shrink: 0; letter-spacing: 0.02em;
+  }}
+  .p-badge.P1 {{ background: var(--critical-bg); color: var(--critical); border: 1px solid rgba(239,68,68,0.3); }}
+  .p-badge.P2 {{ background: var(--high-bg); color: var(--high); border: 1px solid rgba(249,115,22,0.3); }}
+  .p-badge.P3 {{ background: var(--medium-bg); color: var(--medium); border: 1px solid rgba(234,179,8,0.3); }}
+  .p-badge.P4 {{ background: var(--low-bg); color: var(--low); border: 1px solid rgba(34,197,94,0.3); }}
+  /* KEV / exposure micro-tags on the priority queue */
+  .p-tags {{ display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }}
+  .p-tag {{
+    font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+    padding: 0.12rem 0.35rem; border-radius: 3px; letter-spacing: 0.03em;
+  }}
+  .p-tag.kev {{ background: rgba(239,68,68,0.15); color: var(--critical); }}
+  .p-tag.epss {{ background: rgba(129,140,248,0.15); color: #a5b4fc; }}
+  .p-tag.exp {{ background: rgba(249,115,22,0.15); color: var(--high); }}
+  .p-tag.rw {{ background: rgba(239,68,68,0.22); color: #fca5a5; }}
+
+  /* "Top to fix first" queue */
+  .tr-title {{
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--text-muted); font-weight: 700; margin: 1.2rem 0 0.6rem;
+  }}
+  .toprisks {{ display: flex; flex-direction: column; gap: 0.45rem; }}
+  .tr-row {{
+    display: grid; grid-template-columns: auto auto 1fr auto; gap: 0.8rem; align-items: center;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.9rem;
+  }}
+  .tr-rank {{ font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted); font-weight: 700; min-width: 1.1rem; text-align: center; }}
+  .tr-name {{ font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }}
+  .tr-why {{ font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.2rem; line-height: 1.5; }}
+  @media (max-width: 720px) {{
+    .tr-row {{ grid-template-columns: auto 1fr; }}
+    .tr-score, .p-tags {{ grid-column: 2; }}
+  }}
+
   .finding-title {{
     font-size: 0.875rem;
     font-weight: 600;
@@ -700,6 +800,9 @@ class ReportGenerator:
     </div>
   </div>
 
+  <!-- Priority Tiers (P1-P4) -->
+  {priority_html}
+
   <!-- Category Breakdown -->
   <div class="categories-section">
     <h2>Findings by Category</h2>
@@ -710,8 +813,13 @@ class ReportGenerator:
 
   <!-- Filter Bar -->
   <div class="filter-bar">
-    <label>Filter:</label>
+    <label>Priority:</label>
     <button class="filter-btn active" onclick="filterFindings('ALL')">All ({total})</button>
+    <button class="filter-btn" onclick="filterFindings('P1')">P1 &middot; Fix Now ({tier_counts['P1']})</button>
+    <button class="filter-btn" onclick="filterFindings('P2')">P2 &middot; This Week ({tier_counts['P2']})</button>
+    <button class="filter-btn" onclick="filterFindings('P3')">P3 &middot; Planned ({tier_counts['P3']})</button>
+    <button class="filter-btn" onclick="filterFindings('P4')">P4 &middot; Backlog ({tier_counts['P4']})</button>
+    <label style="margin-left:0.75rem">Severity:</label>
     <button class="filter-btn" onclick="filterFindings('CRITICAL')">Critical ({crit})</button>
     <button class="filter-btn" onclick="filterFindings('HIGH')">High ({high})</button>
     <button class="filter-btn" onclick="filterFindings('MEDIUM')">Medium ({med})</button>
@@ -738,16 +846,14 @@ document.querySelectorAll('.finding-header').forEach(el => {{
   }});
 }});
 
-// Severity filter
-function filterFindings(sev) {{
+// Filter by priority tier (P1-P4) or severity — tiers and severities are distinct
+// tokens, so one function matches either the card's data-tier or data-severity.
+function filterFindings(key) {{
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
   document.querySelectorAll('.finding-card').forEach(card => {{
-    if (sev === 'ALL' || card.dataset.severity === sev) {{
-      card.style.display = '';
-    }} else {{
-      card.style.display = 'none';
-    }}
+    const show = (key === 'ALL' || card.dataset.tier === key || card.dataset.severity === key);
+    card.style.display = show ? '' : 'none';
   }});
 }}
 
@@ -792,12 +898,76 @@ window.addEventListener('beforeprint', () => {{
         return (f'<div class="finding-section"><div class="finding-section-title">'
                 f'{html.escape(title)}</div>{inner}</div>')
 
+    def _prio_tags(self, pr) -> str:
+        """KEV / EPSS / exposure micro-tags for a PriorityResult."""
+        tags = []
+        if getattr(pr, "kev", False):
+            kd = getattr(pr, "kev_date", None)
+            tags.append(f'<span class="p-tag kev">KEV{(" " + html.escape(str(kd))) if kd else ""}</span>')
+        if getattr(pr, "ransomware", False):
+            tags.append('<span class="p-tag rw">Ransomware</span>')
+        epss = getattr(pr, "epss", None)
+        if epss is not None and epss >= 0.10:
+            tags.append(f'<span class="p-tag epss">EPSS {epss * 100:.0f}%</span>')
+        if getattr(pr, "reachable", False):
+            tags.append('<span class="p-tag exp">Exposed</span>')
+        return "".join(tags)
+
+    def _render_priority_section(self, tier_counts) -> str:
+        """P1-P4 tier summary cards + a 'top to fix first' queue (P1/P2 by score)."""
+        if not self._prio_by_id or not self._tier_meta:
+            return ""
+        sub = ("Findings ranked by severity &times; real-world exploitability (CISA KEV + FIRST.org "
+               "EPSS) &times; on-device config reachability. Work the queue top-down: P1 first.")
+        cards = []
+        for t in ("P1", "P2", "P3", "P4"):
+            m = self._tier_meta.get(t, {})
+            cards.append(
+                f'<div class="tier-card {t}"><div class="tier-top">'
+                f'<span class="tier-id">{t}</span><span class="tier-n">{tier_counts.get(t, 0)}</span></div>'
+                f'<div class="tier-lab">{html.escape(m.get("label", ""))}</div>'
+                f'<div class="tier-win">{html.escape(m.get("window", ""))}</div></div>')
+
+        ranked = []
+        for f in self.findings:
+            pr = self._tier_of(f)
+            if pr is not None:
+                ranked.append((f, pr))
+        ranked.sort(key=lambda x: (self._TIER_RANK.get(x[1].tier, 9), -getattr(x[1], "score", 0)))
+        top = [(f, pr) for f, pr in ranked if pr.tier in ("P1", "P2")][:10]
+        top_html = ""
+        if top:
+            rows = []
+            for i, (f, pr) in enumerate(top, 1):
+                dev = (f'<span class="finding-id">{html.escape(str(f.get("device", "")))}</span>'
+                       if f.get("device") else "")
+                rows.append(
+                    f'<div class="tr-row"><div class="tr-rank">{i}</div>'
+                    f'<div class="tr-score"><span class="p-badge {pr.tier}">{pr.tier} &middot; '
+                    f'{getattr(pr, "score", 0)}</span></div>'
+                    f'<div class="tr-main"><span class="tr-name">{html.escape(f.get("title", ""))}</span> '
+                    f'<span class="finding-id">{html.escape(f.get("check_id", ""))}</span> {dev}'
+                    f'<div class="tr-why">{html.escape(getattr(pr, "rationale", "") or "")}</div></div>'
+                    f'<div class="p-tags">{self._prio_tags(pr)}</div></div>')
+            top_html = (f'<div class="tr-title">Top {len(top)} to fix first</div>'
+                        f'<div class="toprisks">{"".join(rows)}</div>')
+        return (f'<div class="prio-section"><h2>Risk-Prioritized Remediation Queue</h2>'
+                f'<div class="prio-sub">{sub}</div>'
+                f'<div class="prio-grid">{"".join(cards)}</div>{top_html}</div>')
+
     def _render_findings(self) -> str:
         """Render all findings as HTML cards, enriched from the remediation KB
         (detailed observation, step-by-step remediation, CLI, verify, rollback,
         operational impact) with graceful fallback to the finding's own fields."""
         order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
-        sorted_findings = sorted(self.findings, key=lambda f: order.get(f["severity"], 4))
+
+        def _sortkey(f):
+            pr = self._tier_of(f)
+            trank = self._TIER_RANK.get(getattr(pr, "tier", None), 9) if pr is not None else 9
+            score = -getattr(pr, "score", 0) if pr is not None else 0
+            return (trank, order.get(f.get("severity"), 4), score)
+        # Fix-first order: P1 -> P4, then by severity, then by score within tier.
+        sorted_findings = sorted(self.findings, key=_sortkey)
 
         parts = []
         for f in sorted_findings:
@@ -878,10 +1048,18 @@ window.addEventListener('beforeprint', () => {{
             if f.get("device"):
                 device_tag = f'<span class="finding-id">{html.escape(str(f["device"]))}</span>'
 
+            pr = self._tier_of(f)
+            p_badge, data_tier = "", ""
+            if pr is not None and getattr(pr, "tier", None):
+                p_badge = (f'<span class="p-badge {pr.tier}" title="{html.escape(getattr(pr, "rationale", "") or "")}">'
+                           f'{pr.tier} &middot; {getattr(pr, "score", 0)}</span>')
+                data_tier = f' data-tier="{html.escape(pr.tier)}"'
+
             parts.append(f"""
-    <div class="finding-card" data-severity="{html.escape(f['severity'])}" data-category="{html.escape(f['category'])}">
+    <div class="finding-card" data-severity="{html.escape(f['severity'])}" data-category="{html.escape(f['category'])}"{data_tier}>
       <div class="finding-header">
         <span class="sev-badge {html.escape(f['severity'])}">{html.escape(f['severity'])}</span>
+        {p_badge}
         <span class="finding-title">{html.escape(f['title'])}</span>
         {device_tag}
         <span class="finding-id">{html.escape(f['check_id'])}</span>
