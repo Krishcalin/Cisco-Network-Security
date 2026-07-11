@@ -31,7 +31,7 @@ nss_scanner.py                 # CLI entry, MODULE_MAP, run loop
     ├── logging.py             # 10 checks — syslog, SNMP traps, NetFlow, archive
     ├── crypto.py              # 10 checks — SSH keys, TLS, IPsec, ISAKMP, DH
     ├── cve_detection.py       # 54 published Cisco CVEs (2014-2026, 21 CISA-KEV)
-    └── report_generator.py    # Dark-theme HTML dashboard
+    └── report_generator.py    # Dark-theme HTML dashboard (P1-P4 tiers + KB-driven detail, self-contained)
 ```
 
 ## Auditor Pattern
@@ -216,10 +216,10 @@ lifecycle, ported from the Fortinet/FortiGate scanner and adapted to NSS's
 |--------|---------|-----|
 | `finding_view.py` | Canonical field accessor + `fv_host` (reads the stamped `_host_key`) | — |
 | `compliance_map.py` + `compliance_data.py` | check_id → CIS/PCI-DSS/NIST/SOC2/HIPAA/ISO27001 crosswalk; `benchmark_score(fw, findings, platform)` | (auto, embedded in findings) |
-| `risk_prioritizer.py` + `threat_intel.json` | P1–P4 scoring (severity × CISA-KEV/EPSS × reachability); KEV floor ≥P2 | `--top`, `--refresh-intel`, `--export-intel`, `--import-intel` |
+| `risk_prioritizer.py` + `threat_intel.json` | P1–P4 scoring (severity × CISA-KEV/EPSS × reachability); KEV floor ≥P2. Feeds the HTML report's tier queue, the `--top` CLI queue, posture and exports | `--top`, `--refresh-intel`, `--export-intel`, `--import-intel` |
 | `cve_reachability.py` | Per-device config gate: is the vulnerable feature enabled? Downrank never suppress | (auto, stamps `f["_cve_reach"]`) |
 | `posture.py` | Continuous system of record: new/resolved/reopened, SLA, exceptions (fail-open) | `--history`, `--exceptions` |
-| `remediation_kb.py` + `.json` | Structured Cisco CLI remediation records (exact→family-prefix) | (used by exports + verify) |
+| `remediation_kb.py` + `.json` | **172-entry** detailed KB (per-check + per-CVE; exact→family-prefix): long-form observation, 15–20 step CLI remediation, verify/rollback/impact/refs | rendered per finding in the HTML report; also used by exports + verify |
 | `remediation_verify.py` | A/B loop: REMEDIATED/PERSISTING/CHANGED/REGRESSION vs a prior report | `--verify-against`, `--verify-html`, `--verify-json` |
 | `nss_export.py` | Jira/ServiceNow/Splunk SOAR/webhook + SARIF/OCSF; host-scoped dedup + posture-driven lifecycle | `--jira`, `--servicenow`, `--splunk-soar`, `--webhook`, `--sarif`, `--ocsf`, `--soar-min-tier` |
 | `attestation.py` | Tamper-evident fleet compliance bundle (SHA-256 manifest → RFC6962 Merkle → SHA-256/HMAC seal) + OSCAL | `--attest`, `--attest-key`, `--attest-html`, `--attest-oscal`, `--attest-org`, `--attest-verify` |
@@ -243,10 +243,17 @@ lifecycle, ported from the Fortinet/FortiGate scanner and adapted to NSS's
 - **Unfiltered set for lifecycle.** Prioritization, posture, attestation, and
   remediation-verify run on the pre-`--severity` finding set so a display filter
   can't inflate a pass rate or hide a persisting/regressed finding.
+- **Prioritize before the report.** `main()` runs CVE-reachability stamping +
+  `_prioritize` BEFORE building `ReportGenerator`, and passes the `PriorityResult`
+  list in (`priorities=`). One computation drives the report's P1–P4 tier queue,
+  the `--top` CLI queue, posture and exports — keep them consistent. The report
+  renders each finding from `RemediationKB.detail_for()` (Observation / step-by-step
+  Remediation / CLI / Verification / Rollback / Impact) and is fully self-contained
+  (no external font or network fetch — offline/air-gapped safe).
 
 ### Tests & CI
 
-`tests/` holds the pytest suite (102 tests). `.github/workflows/ci.yml` runs it
+`tests/` holds the pytest suite (103 tests). `.github/workflows/ci.yml` runs it
 on Python 3.8–3.12 plus capability smoke tests (attestation build+verify+tamper,
 keyed HMAC roundtrip, exports, remediation-verify). Gate commits on the real
 pytest exit code — never let a piped `pytest | tail` mask a failure.

@@ -19,14 +19,16 @@
 
 ## Overview
 
-**Network Security Scanner (NSS)** parses Cisco device running-config exports and evaluates them against security baselines from CIS Benchmarks, Cisco hardening guides, and NSA Firepower guidance. It produces an interactive HTML dashboard with findings, severity ratings, and actionable remediation commands.
+**Network Security Scanner (NSS)** parses Cisco device running-config exports and evaluates them against security baselines from CIS Benchmarks, Cisco hardening guides, and NSA Firepower guidance. It produces a self-contained, interactive HTML dashboard: findings ranked into **P1–P4 priority tiers** (severity × exploitability × reachability), each carrying an in-depth observation and step-by-step remediation.
 
 - **Offline config analysis** — no SNMP, SSH, or API access to devices required
 - **Multi-device** — scan router, switch, WAP, ASA, FTD, Nexus, and WLC configs in one run
-- **Zero dependencies** — Python 3.8+ stdlib only
-- **168+ security checks** across 11 audit modules (128 hardening + 40 CVE matches)
+- **Zero dependencies** — Python 3.8+ stdlib only; the HTML report has no external fetches (offline/air-gapped safe)
+- **160+ security checks** across 11 audit modules (108 hardening checks + 54 CVE matches)
+- **P1–P4 prioritized** — a risk-prioritized remediation queue (CISA-KEV + FIRST.org EPSS + config reachability), with a per-finding tier badge
+- **Auditor-grade detail** — every finding gets a long-form observation (attack scenario, blast radius, standards mapping) and a 15–20 step remediation with platform-correct Cisco CLI, verification, rollback, and operational-impact notes
 - **CIS Benchmark aligned** — mapped to CIS Cisco IOS/IOS-XE and FTD benchmarks
-- **CVE Detection** — 40 curated Cisco PSIRT advisories (2018–2026) with auto version-train matching across IOS, IOS-XE, NX-OS, ASA, FTD, WLC
+- **CVE Detection** — 54 curated Cisco PSIRT advisories (2014–2026, 21 CISA-KEV) with auto version-train matching across IOS, IOS-XE, NX-OS, ASA, FTD, WLC
 
 ---
 
@@ -165,12 +167,28 @@ Every finding is scored on severity × threat-intel (CISA KEV + FIRST.org EPSS) 
 reachability, and bucketed into **P1 Fix Now / P2 This Week / P3 This Month /
 P4 Backlog**. A KEV-listed finding never falls below P2.
 
+The **HTML report leads with these tiers**: a *Risk-Prioritized Remediation Queue*
+with P1–P4 tier cards (count + SLA window), a *Top-10 to fix first* list, a P-badge
+(tier · score) on every finding, fix-first ordering (P1 → P4), and P1–P4 filter
+buttons. The same ranking drives the CLI `--top` queue, posture, and exports.
+
 ```bash
-python nss_scanner.py --data-dir ./configs --top 15      # the fix-first queue
+python nss_scanner.py --data-dir ./configs --top 15      # the fix-first queue (CLI)
 python nss_scanner.py --refresh-intel                    # refresh KEV+EPSS (needs internet)
 python nss_scanner.py --export-intel intel.json          # air-gapped transfer
 python nss_scanner.py --import-intel intel.json
 ```
+
+### Report detail
+
+Each finding in the HTML report expands to an auditor-grade write-up sourced from
+a 172-entry remediation knowledge base: a long-form **Observation** (what was
+detected, a concrete attack scenario with the ATT&CK technique, blast radius,
+platform nuances, and CIS/NIST/CWE mapping), a numbered **step-by-step Remediation**
+(15–20 steps of platform-correct Cisco CLI), plus **Configuration commands**,
+**Verification**, **Operational impact**, **Rollback**, and merged **References**.
+The report is fully self-contained — no external fonts or network calls — so it
+renders identically in an air-gapped environment.
 
 ### CVE reachability gating
 
@@ -269,7 +287,7 @@ Network-Security-Scanner-NSS/
 │   ├── logging.py                 # Logging & Monitoring checks
 │   ├── crypto.py                  # Cryptographic posture checks
 │   ├── cve_detection.py           # published Cisco PSIRT CVEs + version matcher
-│   └── report_generator.py        # HTML dashboard generator
+│   └── report_generator.py        # HTML dashboard: P1-P4 tiers + KB-driven per-finding detail
 ├── finding_view.py                 # canonical field accessor (aliases the lifecycle layer)
 ├── compliance_map.py               # control crosswalk + benchmark_score (6 frameworks)
 ├── compliance_data.py              # per-check control mappings
@@ -277,12 +295,12 @@ Network-Security-Scanner-NSS/
 ├── threat_intel.json               # bundled CISA KEV + FIRST.org EPSS snapshot
 ├── cve_reachability.py             # config-gated CVE reachability (per device)
 ├── posture.py                      # continuous posture system of record + exceptions
-├── remediation_kb.py               # structured Cisco CLI remediation knowledge base
-├── remediation_kb.json             # KB data
+├── remediation_kb.py               # remediation KB loader (exact check_id -> family fallback)
+├── remediation_kb.json             # 172 detailed entries (per-check + per-CVE): observation + steps + CLI
 ├── remediation_verify.py           # remediation-verification A/B loop
 ├── nss_export.py                   # SOAR/ticketing (Jira/SNow/Splunk/webhook) + SARIF/OCSF
 ├── attestation.py                  # tamper-evident fleet compliance attestation + OSCAL
-├── tests/                          # pytest suite (102 tests)
+├── tests/                          # pytest suite (103 tests)
 ├── .github/workflows/ci.yml        # CI: pytest (py3.8–3.12) + capability smoke tests
 ├── sample_configs/                 # Demo device configs (7 devices, ~256 findings)
 │   ├── router_core.cfg            # IOS 15.7 router with classic hardening gaps
@@ -307,7 +325,7 @@ Network-Security-Scanner-NSS/
 
 **Python 3.8+** — No external packages required (stdlib only, offline-safe).
 
-For development: `pip install pytest` then `pytest -q` (102 tests). CI runs the
+For development: `pip install pytest` then `pytest -q` (103 tests). CI runs the
 suite on Python 3.8–3.12 plus capability smoke tests on every push/PR
 (`.github/workflows/ci.yml`).
 
