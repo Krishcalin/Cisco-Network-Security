@@ -7,6 +7,19 @@ import re
 import datetime
 from typing import Dict, List, Any, Optional, Set, Tuple
 
+# Compliance auto-resolution. Kept lazy + guarded so the scanner still runs if
+# compliance_map is missing (a finding just carries an empty compliance dict).
+try:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _repo = str(_Path(__file__).resolve().parent.parent)
+    if _repo not in _sys.path:
+        _sys.path.insert(0, _repo)
+    from compliance_map import resolve_compliance as _resolve_compliance
+except Exception:  # pragma: no cover - optional dependency
+    def _resolve_compliance(check_id):
+        return {}
+
 
 # ASA running-config tokens (used by _detect_type below). ASA configs were
 # previously mis-classified as IOS because there was no explicit marker, which
@@ -55,6 +68,9 @@ class BaseAuditor:
             "affected_count": len(affected_items) if affected_items else 0,
             "remediation": remediation, "references": references or [],
             "details": details or {},
+            # Auto-resolved framework crosswalk (CIS/PCI-DSS/NIST/SOC2/HIPAA/ISO27001)
+            # so every finding, and every downstream export, carries compliance context.
+            "compliance": _resolve_compliance(check_id),
             "timestamp": datetime.datetime.now().isoformat(),
         }
         self.findings.append(f)
