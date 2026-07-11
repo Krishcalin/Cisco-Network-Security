@@ -1,0 +1,281 @@
+{
+  "meta": {
+    "schema": "nss-threat-intel/1",
+    "snapshot_date": "2026-07-11",
+    "cve_count": 38,
+    "kev_count": 17,
+    "sources": {
+      "kev": "CISA Known Exploited Vulnerabilities Catalog (cisa.gov/kev)",
+      "epss": "FIRST.org EPSS (first.org/epss)"
+    },
+    "note": "Threat-intel snapshot for the NSS risk prioritizer. Refresh online with: nss_scanner.py --refresh-intel"
+  },
+  "cves": {
+    "CVE-2018-0101": {
+      "kev": true,
+      "kev_date": null,
+      "epss": 0.87138,
+      "epss_pct": 0.99727,
+      "ransomware": false
+    },
+    "CVE-2020-3259": {
+      "kev": true,
+      "kev_date": "2024-02-15",
+      "epss": 0.71789,
+      "epss_pct": 0.9935,
+      "ransomware": true
+    },
+    "CVE-2020-3452": {
+      "kev": true,
+      "kev_date": "2021-11-03",
+      "epss": 0.99992,
+      "epss_pct": 0.99986,
+      "ransomware": false
+    },
+    "CVE-2021-1414": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.01863,
+      "epss_pct": 0.76774,
+      "ransomware": false
+    },
+    "CVE-2022-20695": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.1986,
+      "epss_pct": 0.9711,
+      "ransomware": false
+    },
+    "CVE-2022-20821": {
+      "kev": true,
+      "kev_date": "2022-05-23",
+      "epss": 0.1176,
+      "epss_pct": 0.9558,
+      "ransomware": false
+    },
+    "CVE-2023-20025": {
+      "kev": true,
+      "kev_date": null,
+      "epss": 0.01633,
+      "epss_pct": 0.73472,
+      "ransomware": false
+    },
+    "CVE-2023-20030": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.0075,
+      "epss_pct": 0.50591,
+      "ransomware": false
+    },
+    "CVE-2023-20049": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.01046,
+      "epss_pct": 0.60143,
+      "ransomware": false
+    },
+    "CVE-2023-20072": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.0098,
+      "epss_pct": 0.58056,
+      "ransomware": false
+    },
+    "CVE-2023-20109": {
+      "kev": true,
+      "kev_date": "2023-10-10",
+      "epss": 0.02344,
+      "epss_pct": 0.81648,
+      "ransomware": false
+    },
+    "CVE-2023-20133": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.00644,
+      "epss_pct": 0.46537,
+      "ransomware": false
+    },
+    "CVE-2023-20198": {
+      "kev": true,
+      "kev_date": "2023-10-16",
+      "epss": 0.99571,
+      "epss_pct": 0.99943,
+      "ransomware": false
+    },
+    "CVE-2023-20208": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.00463,
+      "epss_pct": 0.3702,
+      "ransomware": false
+    },
+    "CVE-2023-20223": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.00483,
+      "epss_pct": 0.38238,
+      "ransomware": false
+    },
+    "CVE-2023-20269": {
+      "kev": true,
+      "kev_date": "2023-09-13",
+      "epss": 0.21583,
+      "epss_pct": 0.97332,
+      "ransomware": true
+    },
+    "CVE-2023-20273": {
+      "kev": true,
+      "kev_date": "2023-10-23",
+      "epss": 0.89634,
+      "epss_pct": 0.99773,
+      "ransomware": false
+    },
+    "CVE-2024-20253": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.02057,
+      "epss_pct": 0.79043,
+      "ransomware": false
+    },
+    "CVE-2024-20271": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.00633,
+      "epss_pct": 0.46092,
+      "ransomware": false
+    },
+    "CVE-2024-20272": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.01604,
+      "epss_pct": 0.72988,
+      "ransomware": false
+    },
+    "CVE-2024-20275": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.00509,
+      "epss_pct": 0.398,
+      "ransomware": false
+    },
+    "CVE-2024-20283": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.00407,
+      "epss_pct": 0.32793,
+      "ransomware": false
+    },
+    "CVE-2024-20353": {
+      "kev": true,
+      "kev_date": "2024-04-24",
+      "epss": 0.70686,
+      "epss_pct": 0.99317,
+      "ransomware": false
+    },
+    "CVE-2024-20356": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.32697,
+      "epss_pct": 0.98141,
+      "ransomware": false
+    },
+    "CVE-2024-20359": {
+      "kev": true,
+      "kev_date": "2024-04-24",
+      "epss": 0.19434,
+      "epss_pct": 0.97039,
+      "ransomware": false
+    },
+    "CVE-2024-20399": {
+      "kev": true,
+      "kev_date": "2024-07-02",
+      "epss": 0.04271,
+      "epss_pct": 0.89927,
+      "ransomware": false
+    },
+    "CVE-2024-20418": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.03146,
+      "epss_pct": 0.864,
+      "ransomware": false
+    },
+    "CVE-2024-20419": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.80635,
+      "epss_pct": 0.99579,
+      "ransomware": false
+    },
+    "CVE-2024-20432": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.01142,
+      "epss_pct": 0.62889,
+      "ransomware": false
+    },
+    "CVE-2024-20436": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.0086,
+      "epss_pct": 0.54208,
+      "ransomware": false
+    },
+    "CVE-2024-20481": {
+      "kev": true,
+      "kev_date": "2024-10-24",
+      "epss": 0.15953,
+      "epss_pct": 0.96512,
+      "ransomware": false
+    },
+    "CVE-2025-20128": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.01509,
+      "epss_pct": 0.71424,
+      "ransomware": false
+    },
+    "CVE-2025-20188": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.17894,
+      "epss_pct": 0.96825,
+      "ransomware": false
+    },
+    "CVE-2025-20333": {
+      "kev": true,
+      "kev_date": "2025-09-25",
+      "epss": 0.40391,
+      "epss_pct": 0.98472,
+      "ransomware": false
+    },
+    "CVE-2025-20336": {
+      "kev": false,
+      "kev_date": null,
+      "epss": 0.00349,
+      "epss_pct": 0.26939,
+      "ransomware": false
+    },
+    "CVE-2025-20352": {
+      "kev": true,
+      "kev_date": "2025-09-29",
+      "epss": 0.37613,
+      "epss_pct": 0.98358,
+      "ransomware": false
+    },
+    "CVE-2025-20362": {
+      "kev": true,
+      "kev_date": "2025-09-25",
+      "epss": 0.85543,
+      "epss_pct": 0.99696,
+      "ransomware": false
+    },
+    "CVE-2025-20363": {
+      "kev": true,
+      "kev_date": null,
+      "epss": 0.0752,
+      "epss_pct": 0.93776,
+      "ransomware": false
+    }
+  }
+}

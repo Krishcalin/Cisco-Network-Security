@@ -50,9 +50,16 @@ _RE_CVE = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
 _RE_CWE = re.compile(r"CWE-\d+", re.IGNORECASE)
 
 
-def _ref_token(finding: dict, rx: "re.Pattern") -> Any:
+def _token(finding: dict, rx: "re.Pattern") -> Any:
+    """Find a CVE-/CWE-style token in references, then the title/description.
+    CVE-Detection findings carry the CVE id in the TITLE (e.g. 'CVE-2025-20333 — …'),
+    not in references, so the title is searched too."""
     for ref in (finding.get("references") or []):
         m = rx.search(str(ref))
+        if m:
+            return m.group(0).upper()
+    for key in ("title", "description"):
+        m = rx.search(str(finding.get(key, "")))
         if m:
             return m.group(0).upper()
     return None
@@ -78,10 +85,10 @@ def _g(finding: Any, key: str, default: Any = "") -> Any:
             return det.get("remediation_cmd") or finding.get("remediation_cmd", "") or ""
         if key == "cve":
             det = finding.get("details") or {}
-            return finding.get("cve") or det.get("cve") or _ref_token(finding, _RE_CVE)
+            return finding.get("cve") or det.get("cve") or _token(finding, _RE_CVE)
         if key == "cwe":
             det = finding.get("details") or {}
-            return finding.get("cwe") or det.get("cwe") or _ref_token(finding, _RE_CWE)
+            return finding.get("cwe") or det.get("cwe") or _token(finding, _RE_CWE)
         if key == "compliance":
             return finding.get("compliance") or {}
         if key == "line_num":

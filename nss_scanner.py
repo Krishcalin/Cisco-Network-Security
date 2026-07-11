@@ -76,7 +76,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Network Security Scanner — Cisco device config audit"
     )
-    parser.add_argument("--data-dir", required=True,
+    parser.add_argument("--data-dir", default=None,
         help="Directory containing device config files (.cfg/.txt/.conf)")
     parser.add_argument("--output", default="nss_security_report.html",
         help="Output HTML report filename")
@@ -95,8 +95,23 @@ def main():
         help="Continuous posture: update a system-of-record JSON and report new/resolved/reopened/SLA per device")
     parser.add_argument("--exceptions", default=None, metavar="FILE",
         help="Risk-acceptance file (JSON) for --history: accepted findings stop nagging until they expire (fail-open)")
+    parser.add_argument("--top", type=int, nargs="?", const=15, default=None, metavar="N",
+        help="Print the risk-prioritized fix-first queue (top N, default 15)")
+    parser.add_argument("--refresh-intel", dest="refresh_intel", action="store_true",
+        help="Refresh the bundled KEV+EPSS threat-intel snapshot from CISA + FIRST.org, then exit (needs internet)")
+    parser.add_argument("--export-intel", dest="export_intel", default=None, metavar="FILE",
+        help="Copy the threat-intel snapshot to FILE for air-gapped transfer, then exit")
+    parser.add_argument("--import-intel", dest="import_intel", default=None, metavar="FILE",
+        help="Install a hand-carried threat-intel snapshot from FILE (validated), then exit")
 
     args = parser.parse_args()
+
+    # ── threat-intel maintenance actions (standalone; no scan needed) ──
+    if args.refresh_intel or args.export_intel or args.import_intel:
+        sys.exit(_intel_action(args))
+
+    if not args.data_dir:
+        parser.error("--data-dir is required (unless using --refresh-intel/--export-intel/--import-intel)")
     data_dir = Path(args.data_dir)
     if not data_dir.exists():
         print(f"[ERROR] Data directory not found: {data_dir}")
@@ -164,12 +179,19 @@ def main():
         _save_json(args.json_out, all_findings, scan_meta)
         print(f"[*] JSON findings report: {args.json_out}")
 
+    # Risk-prioritization overlay (P1-P4). Computed on the FULL set so a --severity
+    # display filter can't weaken the exposure signal; keyed by id(finding) for the
+    # posture SLA/weaponization pass and later exporters.
+    prio_by_id, prio_results = _prioritize(all_findings_unfiltered)
+    if args.top:
+        _print_top(prio_results, args.top)
+
     # Continuous posture runs on the FULL (unfiltered) finding set so a --severity
     # display filter can never record a finding as resolved. Per device (NSS is
     # multi-device); the returned deltas are stashed for later exporters.
     posture_deltas = {}
     if args.history:
-        posture_deltas = _update_posture(args.history, args.exceptions, all_findings_unfiltered)
+        posture_deltas = _update_posture(args.history, args.exceptions, all_findings_unfiltered, prio_by_id)
 
     crit = sum(1 for f in all_findings if f["severity"] == "CRITICAL")
     high = sum(1 for f in all_findings if f["severity"] == "HIGH")
@@ -191,6 +213,82 @@ def main():
 
 
 _SEV_WEIGHT = {"CRITICAL": 25, "HIGH": 10, "MEDIUM": 4, "LOW": 1}
+
+
+def _prioritize(findings):
+    """Return (prio_by_id, prio_results). Degrades to ({}, []) if the module is
+    unavailable so the rest of the scan still runs."""
+    try:
+        from risk_prioritizer import RiskPrioritizer, ThreatIntel, by_finding
+    except Exception as exc:  # pragma: no cover
+        print(f"[WARN] risk-prioritizer unavailable: {exc}")
+        return {}, []
+    intel = ThreatIntel()
+    results = RiskPrioritizer(intel).prioritize(findings, context_findings=findings)
+    if intel.available and intel.is_stale():
+        print(f"[!] Threat-intel snapshot is stale ({intel.age_days()}d old) — run --refresh-intel.")
+    return by_finding(results), results
+
+
+def _print_top(prio_results, n):
+    from risk_prioritizer import TIER_META
+    tiers = {"P1": 0, "P2": 0, "P3": 0, "P4": 0}
+    for r in prio_results:
+        tiers[r.tier] = tiers.get(r.tier, 0) + 1
+    print("\n[*] Risk-prioritized fix-first queue:")
+    for t in ("P1", "P2", "P3", "P4"):
+        print(f"    {t}  {TIER_META[t]['label']:<20} {tiers[t]:>4}   ({TIER_META[t]['window']})")
+    from finding_view import _g
+    print()
+    for i, r in enumerate(prio_results[:n], 1):
+        cve = _g(r.finding, "cve", None)
+        tags = []
+        if r.kev:
+            tags.append("KEV")
+        if r.epss:
+            tags.append(f"EPSS {int(r.epss*100)}%")
+        if r.reachable:
+            tags.append("reachable")
+        tagstr = ("  [" + ", ".join(tags) + "]") if tags else ""
+        print(f"  {i:>2}. {r.tier} {_g(r.finding,'severity'):<8} {_g(r.finding,'rule_id'):<14} "
+              f"{str(_g(r.finding,'name',''))[:46]}" + (f" ({cve})" if cve else "") + tagstr
+              + f"   score {r.score}/100 · {_g(r.finding,'device','')}")
+
+
+def _intel_action(args):
+    """Handle --refresh-intel / --export-intel / --import-intel, then exit."""
+    try:
+        from risk_prioritizer import refresh_threat_intel, export_intel, import_intel
+        from modules import cve_detection as _cd
+    except Exception as exc:
+        print(f"[ERROR] intel module unavailable: {exc}")
+        return 1
+    if args.export_intel:
+        try:
+            meta = export_intel(args.export_intel)
+            print(f"[+] Exported threat-intel snapshot ({meta.get('cve_count')} CVEs) to {args.export_intel}")
+            return 0
+        except (OSError, ValueError) as exc:
+            print(f"[ERROR] export failed: {exc}"); return 1
+    if args.import_intel:
+        try:
+            meta = import_intel(args.import_intel)
+            print(f"[+] Imported threat-intel snapshot ({meta.get('cve_count')} CVEs, {meta.get('kev_count')} KEV)")
+            return 0
+        except (OSError, ValueError) as exc:
+            print(f"[ERROR] import failed: {exc}"); return 1
+    # refresh
+    cves = [v for k, v in vars(_cd).items() if isinstance(v, list) and v
+            and isinstance(v[0], dict) and v[0].get("cve")]
+    ids = sorted({c["cve"] for c in (cves[0] if cves else [])})
+    print(f"[*] Refreshing threat intel for {len(ids)} tracked CVE(s) from CISA KEV + FIRST.org EPSS ...")
+    try:
+        meta = refresh_threat_intel(ids)
+        print(f"[+] Snapshot updated: {meta['cve_count']} CVE(s), {meta['kev_count']} KEV-listed ({meta['snapshot_date']}).")
+        return 0
+    except Exception as exc:
+        print(f"[ERROR] refresh failed: {exc}\n    (offline? the bundled snapshot remains in use.)")
+        return 1
 
 
 def _posture_host_key(findings):
