@@ -80,12 +80,17 @@ def main():
         help="Directory containing device config files (.cfg/.txt/.conf)")
     parser.add_argument("--output", default="nss_security_report.html",
         help="Output HTML report filename")
+    parser.add_argument("--json", dest="json_out", default=None, metavar="FILE",
+        help="Also write a machine-readable JSON findings report (feeds --verify-against, diffs, pipelines)")
     parser.add_argument("--severity",
         choices=["CRITICAL", "HIGH", "MEDIUM", "LOW", "ALL"], default="ALL")
     parser.add_argument("--modules", nargs="+",
         choices=list(MODULE_MAP.keys()) + ["all"], default=["all"])
     parser.add_argument("--config", default=None,
         help="Custom baseline config JSON")
+    parser.add_argument("--fail-on", dest="fail_on", default=None,
+        choices=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+        help="Exit non-zero (2) if any finding at or above this severity is present (CI gating). Default: always exit 0.")
 
     args = parser.parse_args()
     data_dir = Path(args.data_dir)
@@ -124,6 +129,11 @@ def main():
                 f["device_type"] = parsed_config.device_type
             all_findings.extend(findings)
 
+    # Capture the FULL, pre-severity-filter finding set. Benchmark scoring,
+    # attestation and remediation-verification must run on this (a --severity
+    # display filter must never inflate a pass rate or fabricate regressions).
+    all_findings_unfiltered = list(all_findings)
+
     # Filter by severity
     severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
     if args.severity != "ALL":
@@ -146,6 +156,10 @@ def main():
     generator = ReportGenerator(all_findings, scan_meta)
     generator.generate(args.output)
 
+    if args.json_out:
+        _save_json(args.json_out, all_findings, scan_meta)
+        print(f"[*] JSON findings report: {args.json_out}")
+
     crit = sum(1 for f in all_findings if f["severity"] == "CRITICAL")
     high = sum(1 for f in all_findings if f["severity"] == "HIGH")
     med = sum(1 for f in all_findings if f["severity"] == "MEDIUM")
@@ -156,6 +170,28 @@ def main():
     print(f"  CRITICAL: {crit}  |  HIGH: {high}  |  MEDIUM: {med}  |  LOW: {low}")
     print(f"  Report: {args.output}")
     print(f"{'='*65}\n")
+
+    # Severity-gated exit code for CI (default: always 0, unchanged behaviour).
+    if args.fail_on:
+        gate = severity_order.get(args.fail_on, 4)
+        if any(severity_order.get(f.get("severity", "INFO"), 4) <= gate for f in all_findings):
+            print(f"[!] Findings at or above {args.fail_on} present — exiting 2 (--fail-on).")
+            sys.exit(2)
+
+
+def _save_json(path, findings, scan_meta):
+    """Write a machine-readable findings report. The stable base other tooling
+    (remediation-verification, diffs, exporters) reads. Schema v1."""
+    report = {
+        "scanner": "Network Security Scanner (NSS)",
+        "schema_version": 1,
+        "generated": datetime.datetime.now().isoformat(),
+        "scan_meta": scan_meta,
+        "total_findings": len(findings),
+        "findings": findings,
+    }
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(report, fh, indent=2, ensure_ascii=False, default=str)
 
 
 if __name__ == "__main__":
