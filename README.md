@@ -151,6 +151,104 @@ relies on the linked advisory for patch-precise upgrade guidance.
 
 ---
 
+## Security-Operations Capabilities
+
+Beyond the config audit, NSS carries a full finding-lifecycle layer — the same
+capabilities as the Fortinet/FortiGate scanner, adapted to Cisco's multi-device
+model (one scan = many IOS / IOS-XE / NX-OS / ASA / FTD / WLC devices).
+
+### Risk prioritization (P1–P4)
+
+Every finding is scored on severity × threat-intel (CISA KEV + FIRST.org EPSS) ×
+reachability, and bucketed into **P1 Fix Now / P2 This Week / P3 This Month /
+P4 Backlog**. A KEV-listed finding never falls below P2.
+
+```bash
+python nss_scanner.py --data-dir ./configs --top 15      # the fix-first queue
+python nss_scanner.py --refresh-intel                    # refresh KEV+EPSS (needs internet)
+python nss_scanner.py --export-intel intel.json          # air-gapped transfer
+python nss_scanner.py --import-intel intel.json
+```
+
+### CVE reachability gating
+
+From the config alone, NSS asks *is the vulnerable feature actually enabled on
+this device?* — e.g. an IOS-XE Web UI RCE only when `ip http server` is on, an
+ASA WebVPN RCE only when `webvpn` is enabled. Findings whose feature is disabled
+or locked down are **downranked, never suppressed**, and the KEV floor still
+holds. Verdicts are per device.
+
+### Continuous posture (system of record)
+
+```bash
+python nss_scanner.py --data-dir ./configs --history posture.json \
+    --exceptions accepted_risks.json
+```
+
+Tracks **new / resolved / reopened** findings per device across scans, enforces
+per-tier SLAs, and honours risk-acceptance exceptions (fail-open on expiry).
+
+### SOAR / ticketing + SIEM export
+
+```bash
+python nss_scanner.py --data-dir ./configs \
+    --jira jira.json --servicenow snow.json --splunk-soar soar.json \
+    --webhook events.json --sarif out.sarif --ocsf out.ocsf.json \
+    --soar-min-tier P2
+```
+
+Vendor-native payloads (Jira ADF, ServiceNow Incident, Splunk SOAR container,
+CloudEvents webhook) plus **SARIF 2.1.0** and **OCSF** for SIEM/code-scanning.
+Each finding gets a stable, host-scoped dedup key so the same check on two
+devices opens two tickets, and posture deltas drive create/update/**resolve**.
+
+### Compliance attestation pack (tamper-evident)
+
+```bash
+python nss_scanner.py --data-dir ./configs \
+    --attest attestation.json --attest-html attestation.html \
+    --attest-oscal oscal.json --attest-key env:NSS_ATT_KEY
+python nss_scanner.py --attest-verify attestation.json --attest-key env:NSS_ATT_KEY
+```
+
+Per-control **PASS / FAIL / RISK-ACCEPTED** across CIS / PCI-DSS / NIST 800-53 /
+SOC 2 / HIPAA / ISO 27001, one block per device (platform-scoped benchmark),
+sealed with a canonical-JSON → SHA-256 manifest → RFC 6962 Merkle root →
+SHA-256 integrity digest (or a keyed **HMAC-SHA256** seal). An OSCAL-1.1.2-aligned
+projection is emitted on request. Honest by design: **auditor input, not a
+compliance certification**.
+
+### Remediation-verification loop (did my fixes land?)
+
+```bash
+python nss_scanner.py --data-dir ./configs --json baseline.json   # before
+# ... apply fixes ...
+python nss_scanner.py --data-dir ./configs --verify-against baseline.json \
+    --verify-html verify.html
+```
+
+Re-scans and classifies each prior finding as **REMEDIATED / PERSISTING /
+CHANGED / REGRESSION** with before→after evidence and the KB verify command,
+reporting a remediation rate per device and fleet-wide (exit 0 clean / 2 not —
+CI-gateable).
+
+### Compliance scorecard & benchmark
+
+```bash
+python nss_scanner.py --data-dir ./configs --json out.json   # embeds compliance mappings
+```
+
+Findings carry CIS / PCI-DSS / NIST / SOC 2 / HIPAA / ISO 27001 control mappings;
+`benchmark_score()` scores the config against any framework (platform-scoped).
+
+### CI gating
+
+```bash
+python nss_scanner.py --data-dir ./configs --fail-on HIGH      # exit 2 if any HIGH+
+```
+
+---
+
 ## Project Structure
 
 ```
@@ -168,8 +266,22 @@ Network-Security-Scanner-NSS/
 │   ├── ngfw_platform.py           # NGFW platform checks
 │   ├── logging.py                 # Logging & Monitoring checks
 │   ├── crypto.py                  # Cryptographic posture checks
-│   ├── cve_detection.py           # 40 published Cisco PSIRT CVEs + version matcher
+│   ├── cve_detection.py           # published Cisco PSIRT CVEs + version matcher
 │   └── report_generator.py        # HTML dashboard generator
+├── finding_view.py                 # canonical field accessor (aliases the lifecycle layer)
+├── compliance_map.py               # control crosswalk + benchmark_score (6 frameworks)
+├── compliance_data.py              # per-check control mappings
+├── risk_prioritizer.py             # P1–P4 scoring (severity × KEV/EPSS × reachability)
+├── threat_intel.json               # bundled CISA KEV + FIRST.org EPSS snapshot
+├── cve_reachability.py             # config-gated CVE reachability (per device)
+├── posture.py                      # continuous posture system of record + exceptions
+├── remediation_kb.py               # structured Cisco CLI remediation knowledge base
+├── remediation_kb.json             # KB data
+├── remediation_verify.py           # remediation-verification A/B loop
+├── nss_export.py                   # SOAR/ticketing (Jira/SNow/Splunk/webhook) + SARIF/OCSF
+├── attestation.py                  # tamper-evident fleet compliance attestation + OSCAL
+├── tests/                          # pytest suite (102 tests)
+├── .github/workflows/ci.yml        # CI: pytest (py3.8–3.12) + capability smoke tests
 ├── sample_configs/                 # Demo device configs (7 devices, ~290 findings)
 │   ├── router_core.cfg            # IOS 15.7 router with classic hardening gaps
 │   ├── switch_access.cfg          # IOS access switch with switching weaknesses
@@ -191,7 +303,11 @@ Network-Security-Scanner-NSS/
 
 ## Requirements
 
-**Python 3.8+** — No external packages required.
+**Python 3.8+** — No external packages required (stdlib only, offline-safe).
+
+For development: `pip install pytest` then `pytest -q` (102 tests). CI runs the
+suite on Python 3.8–3.12 plus capability smoke tests on every push/PR
+(`.github/workflows/ci.yml`).
 
 ## References
 

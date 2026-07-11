@@ -1,0 +1,83 @@
+name: tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Run unit tests
+        run: pytest -q
+
+      - name: Smoke-run the scanner (all modules over sample_configs)
+        run: python nss_scanner.py --data-dir ./sample_configs --output /tmp/nss_report.html --json /tmp/nss.json
+
+      - name: Compliance attestation build + verify roundtrip
+        run: |
+          python nss_scanner.py --data-dir ./sample_configs --output /tmp/att_r.html \
+            --attest /tmp/att.json --attest-html /tmp/att.html --attest-oscal /tmp/att.oscal.json
+          python nss_scanner.py --attest-verify /tmp/att.json
+
+      - name: Keyed (HMAC) attestation build + verify roundtrip
+        env:
+          NSS_ATT_KEY: ci-fleet-key
+        run: |
+          python nss_scanner.py --data-dir ./sample_configs --output /tmp/att_r2.html \
+            --attest /tmp/att_hmac.json --attest-key env:NSS_ATT_KEY
+          python nss_scanner.py --attest-verify /tmp/att_hmac.json --attest-key env:NSS_ATT_KEY
+
+      - name: Tamper detection must fail verification (expect exit 2)
+        run: |
+          python - <<'PY'
+          import json
+          b = json.load(open("/tmp/att.json", encoding="utf-8"))
+          for dev in b["body"]["devices"]:
+              for blk in dev["results"]:
+                  for c in blk["controls"]:
+                      if c["status"] == "FAIL":
+                          c["status"] = "PASS"
+          json.dump(b, open("/tmp/att_tampered.json", "w"))
+          PY
+          if python nss_scanner.py --attest-verify /tmp/att_tampered.json; then
+            echo "ERROR: tampered bundle passed verification"; exit 1
+          else
+            echo "OK: tampered bundle correctly rejected"
+          fi
+
+      - name: SOAR / SIEM exports
+        run: |
+          python nss_scanner.py --data-dir ./sample_configs --output /tmp/exp_r.html \
+            --jira /tmp/jira.json --servicenow /tmp/snow.json --splunk-soar /tmp/soar.json \
+            --webhook /tmp/webhook.json --sarif /tmp/out.sarif --ocsf /tmp/out.ocsf.json
+
+      - name: Remediation-verification loop runs (exit 0 or 2 both valid)
+        run: |
+          set +e
+          python nss_scanner.py --data-dir ./sample_configs --output /tmp/rv_r.html \
+            --verify-against /tmp/nss.json --verify-html /tmp/rv.html --verify-json /tmp/rv.json
+          code=$?
+          if [ "$code" -eq 0 ] || [ "$code" -eq 2 ]; then
+            echo "OK: remediation-verify ran (exit $code)"
+          else
+            echo "ERROR: unexpected exit $code"; exit 1
+          fi

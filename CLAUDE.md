@@ -203,6 +203,54 @@ to platform mismatch) — a useful end-to-end smoke test. The 37 INFO entries
 are the cross-platform skip notices: e.g. switch-security and IOS-mgmt
 modules correctly skipped on ASA/NX-OS/FTD samples.
 
+## Security-Operations Layer (finding lifecycle)
+
+Beyond the config audit, a set of stdlib-only modules add a full finding
+lifecycle, ported from the Fortinet/FortiGate scanner and adapted to NSS's
+**multi-device** model (one scan = many devices). They read findings through
+`finding_view._g`, which aliases the Cisco dict shape (`check_id` / `title` /
+`affected_items` / `remediation`) to the ported field names (`rule_id` / `name`
+/ `line_content` / `recommendation`) so the ported code stays near-verbatim.
+
+| Module | Purpose | CLI |
+|--------|---------|-----|
+| `finding_view.py` | Canonical field accessor + `fv_host` (reads the stamped `_host_key`) | — |
+| `compliance_map.py` + `compliance_data.py` | check_id → CIS/PCI-DSS/NIST/SOC2/HIPAA/ISO27001 crosswalk; `benchmark_score(fw, findings, platform)` | (auto, embedded in findings) |
+| `risk_prioritizer.py` + `threat_intel.json` | P1–P4 scoring (severity × CISA-KEV/EPSS × reachability); KEV floor ≥P2 | `--top`, `--refresh-intel`, `--export-intel`, `--import-intel` |
+| `cve_reachability.py` | Per-device config gate: is the vulnerable feature enabled? Downrank never suppress | (auto, stamps `f["_cve_reach"]`) |
+| `posture.py` | Continuous system of record: new/resolved/reopened, SLA, exceptions (fail-open) | `--history`, `--exceptions` |
+| `remediation_kb.py` + `.json` | Structured Cisco CLI remediation records (exact→family-prefix) | (used by exports + verify) |
+| `remediation_verify.py` | A/B loop: REMEDIATED/PERSISTING/CHANGED/REGRESSION vs a prior report | `--verify-against`, `--verify-html`, `--verify-json` |
+| `nss_export.py` | Jira/ServiceNow/Splunk SOAR/webhook + SARIF/OCSF; host-scoped dedup + posture-driven lifecycle | `--jira`, `--servicenow`, `--splunk-soar`, `--webhook`, `--sarif`, `--ocsf`, `--soar-min-tier` |
+| `attestation.py` | Tamper-evident fleet compliance bundle (SHA-256 manifest → RFC6962 Merkle → SHA-256/HMAC seal) + OSCAL | `--attest`, `--attest-key`, `--attest-html`, `--attest-oscal`, `--attest-org`, `--attest-verify` |
+
+### Cross-cutting invariants (do not regress)
+
+- **Host identity is a single source of truth.** `nss_scanner._stamp_host_keys`
+  stamps `_host_key` on every finding (hostname, or `<host>|<file>` when the
+  hostname is `unknown` or collides). Posture grouping, `fv_host` (exports), and
+  the attestation per-device enumeration all derive host from it — so two boxes
+  never merge and resolved-closure keys always match the opened ticket.
+- **Anti-overclaim / posture parity.** Attestation and posture derive the finding
+  `entity` identically (`finding_entity` only when `affected_count == 1`); the
+  attestation reuses `benchmark_score` (PASS/FAIL) and posture `Exceptions`
+  (risk-acceptance) so it can never disagree with the posture system of record.
+- **Downrank never suppress + KEV floor.** Reachability only lowers priority;
+  a CISA-KEV-listed finding never drops below P2.
+- **Reproducible + tamper-evident.** Attestation content is float-free and
+  canonicalised (sorted keys, no spaces, UTF-8); all bundle I/O is `utf-8`; the
+  keyed path refuses a seal-downgrade to keyless.
+- **Unfiltered set for lifecycle.** Prioritization, posture, attestation, and
+  remediation-verify run on the pre-`--severity` finding set so a display filter
+  can't inflate a pass rate or hide a persisting/regressed finding.
+
+### Tests & CI
+
+`tests/` holds the pytest suite (102 tests). `.github/workflows/ci.yml` runs it
+on Python 3.8–3.12 plus capability smoke tests (attestation build+verify+tamper,
+keyed HMAC roundtrip, exports, remediation-verify). Gate commits on the real
+pytest exit code — never let a piped `pytest | tail` mask a failure.
+
 ## Development Guidelines
 
 ### Adding a new check module
@@ -263,5 +311,16 @@ python nss_scanner.py --data-dir ./configs --severity HIGH
 python nss_scanner.py --data-dir ./configs --config baseline.json
 ```
 
-Exit code is always 0 today (no CI gating). If you need pipeline gating,
-add a `--fail-on CRITICAL` flag and exit non-zero when matching findings exist.
+CI gating: `--fail-on {CRITICAL|HIGH|MEDIUM|LOW}` exits 2 when any finding at or
+above that severity is present (default exit 0). `--verify-against prior.json`
+exits 2 when the remediation A/B is not clean, and `--attest-verify` exits 2 on a
+tampered/invalid attestation bundle — all three are CI-gateable.
+
+```bash
+# Lifecycle examples
+python nss_scanner.py --data-dir ./configs --top 15 --history posture.json
+python nss_scanner.py --data-dir ./configs --attest att.json --attest-key env:NSS_ATT_KEY
+python nss_scanner.py --attest-verify att.json --attest-key env:NSS_ATT_KEY
+python nss_scanner.py --data-dir ./configs --jira jira.json --sarif out.sarif --soar-min-tier P2
+python nss_scanner.py --data-dir ./configs --verify-against baseline.json --fail-on HIGH
+```
