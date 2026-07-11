@@ -1,0 +1,145 @@
+{
+  "_note": "Structured remediation KB for NSS, keyed by check_id family prefix (exact check_id entries may be added and take precedence via RemediationKB.lookup). CLI is generic Cisco IOS/IOS-XE unless noted; NX-OS/ASA differ where flagged. detail_for() falls back to a finding's own inline remediation for anything unmapped.",
+  "knowledge_base": {
+    "MGMT": {
+      "risk": "Weak or unencrypted device management (missing enable secret, Type-7/cleartext passwords, no AAA, Telnet or SSHv1, unrestricted VTY, HTTP management) lets an attacker reach the control plane, brute-force or sniff admin credentials, and take administrative control of the device.",
+      "steps": [
+        "Set an encrypted enable secret and encrypt all plaintext passwords.",
+        "Enable AAA and require authenticated, authorized, accounted login.",
+        "Force SSHv2 and remove Telnet/HTTP; restrict VTY with an access-class ACL.",
+        "Apply an exec-timeout on all lines and disable the AUX port."
+      ],
+      "gui": "N/A (CLI-managed). On DNA Center / device manager, apply the corresponding device-hardening template.",
+      "cli": "enable secret <STRONG-SECRET>\nservice password-encryption\naaa new-model\naaa authentication login default group tacacs+ local\nip ssh version 2\nline vty 0 4\n transport input ssh\n access-class MGMT-ACL in\n exec-timeout 5 0\nno ip http server\nip http secure-server\nline aux 0\n no exec\n transport input none",
+      "verify": "show run | include enable secret|service password-encryption|aaa new-model|ip ssh version ; show run | section ^line vty ; show ip ssh",
+      "rollback": "Reverse each change with its 'no' form (e.g. 'no ip ssh version 2', 'no aaa new-model'). Note: removing AAA can lock you out — keep a console session open.",
+      "impact": "Non-disruptive to data-plane traffic. Administrators must switch to SSH; verify the MGMT-ACL permits the admin subnets BEFORE applying access-class to avoid lockout.",
+      "references": ["CIS Cisco IOS Benchmark 1.x", "Cisco Guide to Harden Cisco IOS Devices"]
+    },
+    "CRYPTO": {
+      "risk": "Weak cryptographic posture (SSHv1, small RSA keys, weak DH groups, cleartext/Type-7 secrets, SNMP v1/v2c) allows management sessions and community strings to be intercepted or brute-forced.",
+      "steps": [
+        "Generate a >=2048-bit RSA key and force SSH version 2.",
+        "Replace SNMP v1/v2c with SNMPv3 authPriv.",
+        "Use 'enable secret' (Type-8/9 scrypt/pbkdf2 where supported) rather than Type-7."
+      ],
+      "gui": "N/A (CLI-managed).",
+      "cli": "crypto key generate rsa modulus 2048\nip ssh version 2\nip ssh server algorithm encryption aes256-ctr aes192-ctr\nsnmp-server group NSSGRP v3 priv\nsnmp-server user NSSUSER NSSGRP v3 auth sha <AUTHPW> priv aes 256 <PRIVPW>",
+      "verify": "show ip ssh ; show crypto key mypubkey rsa ; show snmp user",
+      "rollback": "Regenerate keys / remove SNMPv3 config with 'no' forms as required.",
+      "impact": "Regenerating the RSA key drops active SSH sessions briefly. Non-disruptive to data plane.",
+      "references": ["CIS Cisco IOS Benchmark 7.x", "NIST SP 800-52r2"]
+    },
+    "CTRL": {
+      "risk": "An unprotected control plane (no CoPP, unauthenticated routing adjacencies, unauthenticated NTP, no BPDU Guard, CDP/LLDP leaking topology) lets an attacker DoS the CPU, inject false routes, or map the network.",
+      "steps": [
+        "Apply Control Plane Policing (CoPP) to rate-limit control traffic.",
+        "Authenticate routing protocols (OSPF/EIGRP MD5/SHA, BGP password).",
+        "Authenticate NTP and enable BPDU Guard on access edge; disable CDP/LLDP on untrusted ports."
+      ],
+      "gui": "N/A (CLI-managed).",
+      "cli": "! OSPF authentication\nrouter ospf 1\n area 0 authentication message-digest\ninterface <IF>\n ip ospf message-digest-key 1 md5 <KEY>\n! BGP\nrouter bgp <ASN>\n neighbor <PEER> password <KEY>\n! NTP + edge\nntp authenticate\nntp authentication-key 1 md5 <KEY>\nntp server <IP> key 1\nspanning-tree portfast bpduguard default\nno cdp run",
+      "verify": "show policy-map control-plane ; show ip ospf interface brief ; show ntp status ; show spanning-tree summary",
+      "rollback": "Remove authentication keys / CoPP policy with 'no' forms. Coordinate routing-auth changes with peers to avoid adjacency loss.",
+      "impact": "Routing-auth changes must be applied to BOTH peers or the adjacency drops. CoPP mis-scoped policies can drop legitimate control traffic — test in a window.",
+      "references": ["CIS Cisco IOS Benchmark 2.x", "Cisco CoPP Reference"]
+    },
+    "DATA": {
+      "risk": "Weak data-plane hardening (no uRPF/anti-spoofing, IP source routing, ICMP redirects, missing edge ACLs) enables source-address spoofing, traffic redirection, and reconnaissance.",
+      "steps": [
+        "Enable unicast RPF on external interfaces.",
+        "Disable IP source routing and ICMP redirects/unreachables on edge interfaces.",
+        "Apply anti-spoofing ingress ACLs at the perimeter."
+      ],
+      "gui": "N/A (CLI-managed).",
+      "cli": "no ip source-route\ninterface <EXT-IF>\n ip verify unicast source reachable-via rx\n no ip redirects\n no ip proxy-arp",
+      "verify": "show run | include ip source-route ; show ip interface <EXT-IF> | include verify|redirect|proxy",
+      "rollback": "Re-enable with 'no ip verify ...' / 'ip redirects' as needed.",
+      "impact": "uRPF strict mode can drop asymmetrically-routed traffic — use 'reachable-via any' where asymmetric routing is expected.",
+      "references": ["CIS Cisco IOS Benchmark 3.x", "Cisco Guide to Harden Cisco IOS Devices"]
+    },
+    "SVC": {
+      "risk": "Unnecessary services (small-servers, finger, BOOTP, PAD, MOP, unused HTTP/DHCP) expand the attack surface and have historically carried remote-exploitable bugs.",
+      "steps": [
+        "Disable all unused management/discovery services.",
+        "Disable TCP/UDP small servers and legacy protocols."
+      ],
+      "gui": "N/A (CLI-managed).",
+      "cli": "no service tcp-small-servers\nno service udp-small-servers\nno ip finger\nno service finger\nno ip bootp server\nno service pad\nno mop enabled",
+      "verify": "show run | include small-servers|finger|bootp|pad|mop",
+      "rollback": "Re-enable a specific service only if a documented dependency requires it.",
+      "impact": "Non-disruptive on modern networks; confirm no legacy device depends on BOOTP/MOP before disabling.",
+      "references": ["CIS Cisco IOS Benchmark 3.x", "Cisco Guide to Harden Cisco IOS Devices"]
+    },
+    "SW": {
+      "risk": "Weak L2 hardening (DTP auto-trunking, default native VLAN, no port-security, no DHCP snooping / Dynamic ARP Inspection) enables VLAN hopping, MAC flooding, rogue DHCP, and ARP spoofing.",
+      "steps": [
+        "Set access ports to mode access and disable DTP negotiation.",
+        "Enable port-security on access ports; move the native VLAN off VLAN 1.",
+        "Enable DHCP snooping and Dynamic ARP Inspection on user VLANs."
+      ],
+      "gui": "N/A (CLI-managed).",
+      "cli": "interface range <ACCESS-PORTS>\n switchport mode access\n switchport nonegotiate\n switchport port-security\n switchport port-security maximum 2\n switchport port-security violation restrict\nip dhcp snooping\nip dhcp snooping vlan <USER-VLANS>\nip arp inspection vlan <USER-VLANS>",
+      "verify": "show interfaces status ; show port-security ; show ip dhcp snooping ; show ip arp inspection",
+      "rollback": "Remove with 'no switchport port-security' / 'no ip dhcp snooping' as needed.",
+      "impact": "port-security violation shutdown can err-disable a port on a MAC change; 'restrict' is safer. Configure DHCP-snooping trust on uplinks/server ports first or DHCP breaks.",
+      "references": ["CIS Cisco IOS Benchmark (Layer 2)", "Cisco Catalyst Hardening Guide"]
+    },
+    "WIFI": {
+      "risk": "Weak wireless security (WEP/WPA-TKIP, PSK on enterprise SSIDs, no 802.11w management-frame protection, no rogue/WIDS) lets an attacker crack keys, deauth clients, or stand up an evil-twin AP.",
+      "steps": [
+        "Use WPA2/WPA3-Enterprise (802.1X) and remove WEP/TKIP/PSK on corporate SSIDs.",
+        "Enable Protected Management Frames (802.11w).",
+        "Enable rogue-AP detection / aWIPS."
+      ],
+      "gui": "Catalyst 9800 WebUI: Configuration > Tags & Profiles > WLANs > Security.",
+      "cli": "wlan CORP 1 CORP\n security wpa wpa3\n security wpa akm dot1x\n security pmf mandatory\n no security wpa wpa2\n no shutdown\nwireless wps rogue detection",
+      "verify": "show wlan summary ; show wlan id 1 ; show wireless wps summary",
+      "rollback": "Restore the prior security profile; re-enabling WPA2 personal is discouraged.",
+      "impact": "Changing SSID security re-authenticates all clients on that WLAN; schedule a window. 802.11w mandatory can drop legacy clients.",
+      "references": ["Cisco Catalyst 9800 Hardening Guide", "NIST SP 800-153"]
+    },
+    "NGFW": {
+      "risk": "Weak firewall policy (any-any permit rules, no threat inspection, no logging on ACEs, unrestricted management/VPN) allows unfiltered lateral movement and hides malicious traffic.",
+      "steps": [
+        "Remove permit ip any any rules; scope source/destination/service to least privilege.",
+        "Enable IPS/malware/URL inspection and log on deny (and key permit) rules.",
+        "Restrict device management and VPN to trusted sources."
+      ],
+      "gui": "FMC: Policies > Access Control; ASDM: Configuration > Firewall > Access Rules.",
+      "cli": "! ASA — replace the any-any rule with a scoped one\nno access-list OUTSIDE_IN extended permit ip any any\naccess-list OUTSIDE_IN extended permit tcp <SRC> host <DST> eq <PORT> log\naccess-group OUTSIDE_IN in interface outside\n! FTD/Firepower — set inspection + logging in the Access Control Policy (FMC)",
+      "verify": "show access-list ; show run access-group ; (FMC) review the Access Control Policy rule table",
+      "rollback": "Restore the previous ACL/rule set from the saved config backup.",
+      "impact": "Tightening ACLs can drop production flows — validate against connection logs / flow data in a maintenance window before removing the broad rule.",
+      "references": ["NSA Network Infrastructure Security Guide", "Cisco Firepower Config Guide"]
+    },
+    "LOG": {
+      "risk": "Without centralized logging, accurate timestamps, and synchronized time, malicious activity is invisible and incident forensics/attribution are impossible.",
+      "steps": [
+        "Send logs to a central syslog/SIEM collector at an appropriate level.",
+        "Enable millisecond timestamps and log the source interface.",
+        "Synchronize and authenticate time via NTP."
+      ],
+      "gui": "N/A (CLI-managed).",
+      "cli": "logging host <SIEM-IP>\nlogging trap informational\nlogging source-interface <MGMT-IF>\nservice timestamps log datetime msec show-timezone\nservice timestamps debug datetime msec\nntp authenticate\nntp server <NTP-IP> key 1",
+      "verify": "show logging ; show ntp status ; show run | include service timestamps",
+      "rollback": "Remove with 'no logging host <ip>' / 'no ntp server <ip>'.",
+      "impact": "Non-disruptive. Ensure the syslog collector can absorb the volume; 'informational' can be chatty on busy devices.",
+      "references": ["CIS Cisco IOS Benchmark (Logging)", "NIST SP 800-92"]
+    },
+    "CISCO-CVE": {
+      "risk": "The device is running a software train affected by a published Cisco PSIRT advisory. Depending on the CVE, an attacker may achieve remote code execution, authentication bypass, privilege escalation, or denial of service.",
+      "steps": [
+        "Identify the exact running version (show version).",
+        "Consult the referenced Cisco Security Advisory and upgrade to its first-fixed release for your train.",
+        "If patching must be deferred, apply the advisory's mitigation and/or disable or ACL-restrict the affected feature (e.g. WebVPN, HTTP server, Smart Install)."
+      ],
+      "gui": "Cisco Software Download / DNA Center SWIM for image upgrade; feature toggles per platform manager.",
+      "cli": "show version\n! example interim mitigations (feature-dependent):\nno ip http server\nno ip http secure-server\nno vstack           ! disable Smart Install\n! ASA/FTD: restrict or disable WebVPN per the advisory until patched",
+      "verify": "show version ; (after upgrade) confirm the build is at or above the advisory's first-fixed release",
+      "rollback": "Roll back to the previous image from bootflash/disk0 if the upgrade regresses; re-enable a feature only if required and patched.",
+      "impact": "A software upgrade REBOOTS the device — schedule a maintenance window and ensure HA/redundancy. Disabling WebVPN/HTTP drops those services until the fix is applied.",
+      "references": ["Cisco PSIRT Security Advisories (sec.cloudapps.cisco.com)", "CISA KEV Catalog"]
+    }
+  }
+}
