@@ -112,12 +112,34 @@ def main():
         help="Copy the threat-intel snapshot to FILE for air-gapped transfer, then exit")
     parser.add_argument("--import-intel", dest="import_intel", default=None, metavar="FILE",
         help="Install a hand-carried threat-intel snapshot from FILE (validated), then exit")
+    parser.add_argument("--attest", metavar="FILE", default=None,
+        help="Emit a tamper-evident compliance attestation bundle (JSON) — auditor evidence, NOT a compliance certification")
+    parser.add_argument("--attest-key", dest="attest_key", metavar="SPEC", default=None,
+        help="Keyed HMAC-SHA256 seal for --attest/--attest-verify. SPEC = 'env:NAME' or a key-file path")
+    parser.add_argument("--attest-html", dest="attest_html", metavar="FILE", default=None,
+        help="Also write a human-readable HTML attestation statement (use with --attest)")
+    parser.add_argument("--attest-oscal", dest="attest_oscal", metavar="FILE", default=None,
+        help="Also write an OSCAL-1.1.2-aligned assessment-results projection (use with --attest)")
+    parser.add_argument("--attest-org", dest="attest_org", metavar="NAME", default="",
+        help="Attester organization recorded in the attestation envelope")
+    parser.add_argument("--attest-verify", dest="attest_verify", metavar="FILE", default=None,
+        help="Verify an existing attestation bundle's integrity (with --attest-key if keyed), then exit")
+    parser.add_argument("--verify-against", dest="verify_against", metavar="FILE", default=None,
+        help="Remediation-verification loop: re-scan and prove which findings in a prior --json report are REMEDIATED / PERSISTING / CHANGED (+ regressions). Exit 0 if clean, 2 otherwise")
+    parser.add_argument("--verify-html", dest="verify_html", metavar="FILE", default=None,
+        help="Also write the remediation-verification report as HTML (use with --verify-against)")
+    parser.add_argument("--verify-json", dest="verify_json", metavar="FILE", default=None,
+        help="Also write the remediation-verification report as JSON (use with --verify-against)")
 
     args = parser.parse_args()
 
     # ── threat-intel maintenance actions (standalone; no scan needed) ──
     if args.refresh_intel or args.export_intel or args.import_intel:
         sys.exit(_intel_action(args))
+
+    # ── attestation verification (standalone; no scan needed) ──
+    if args.attest_verify:
+        sys.exit(_attest_verify_action(args.attest_verify, args.attest_key))
 
     if not args.data_dir:
         parser.error("--data-dir is required (unless using --refresh-intel/--export-intel/--import-intel)")
@@ -160,8 +182,10 @@ def main():
     # Stamp a single disambiguated posture/ticket host key onto every finding so
     # posture, the exporters, and the resolved-closure keys all derive host
     # IDENTICALLY. A hostname-less ('unknown') or hostname-colliding device gets a
-    # '<host>|<file>' key so two boxes can't merge and closures line up.
-    _stamp_host_keys(all_findings)
+    # '<host>|<file>' key so two boxes can't merge and closures line up. The
+    # authoritative device list (from configs) seeds the collision map so a device
+    # that produced zero findings still disambiguates a same-hostname sibling.
+    _stamp_host_keys(all_findings, device_files=[(pc.hostname, fn) for fn, pc in configs])
 
     # Capture the FULL, pre-severity-filter finding set. Benchmark scoring,
     # attestation and remediation-verification must run on this (a --severity
@@ -212,6 +236,12 @@ def main():
     # events). Export the displayed finding set; min-tier is the additional gate.
     _export_all(args, all_findings, prio_by_id, posture_deltas)
 
+    # Compliance attestation pack (tamper-evident auditor evidence). Built on the
+    # FULL unfiltered set (minus INFO, inside attestation) so a --severity display
+    # filter can never inflate a pass rate. Per device, platform-scoped benchmarks.
+    if args.attest:
+        _save_attestation(args, all_findings_unfiltered, configs, data_dir)
+
     crit = sum(1 for f in all_findings if f["severity"] == "CRITICAL")
     high = sum(1 for f in all_findings if f["severity"] == "HIGH")
     med = sum(1 for f in all_findings if f["severity"] == "MEDIUM")
@@ -222,6 +252,11 @@ def main():
     print(f"  CRITICAL: {crit}  |  HIGH: {high}  |  MEDIUM: {med}  |  LOW: {low}")
     print(f"  Report: {args.output}")
     print(f"{'='*65}\n")
+
+    # Remediation-verification loop (terminal A/B action): classify the prior report's
+    # findings against this scan and exit with its verdict code (0 clean / 2 not).
+    if args.verify_against:
+        sys.exit(_verify_fixes(args, all_findings_unfiltered, prio_by_id))
 
     # Severity-gated exit code for CI (default: always 0, unchanged behaviour).
     if args.fail_on:
@@ -310,24 +345,44 @@ def _intel_action(args):
         return 1
 
 
-def _stamp_host_keys(findings):
+def _host_key_map(device_files):
+    """Build hostname -> {config filenames} from (hostname, filename) pairs."""
+    from collections import defaultdict
+    files_by_host = defaultdict(set)
+    for h, fn in device_files:
+        files_by_host[h or "unknown"].add(fn or "")
+    return files_by_host
+
+
+def _host_key_for(hostname, filename, files_by_host):
+    """The stable posture/ticket host key: the hostname, disambiguated with the config
+    filename when the hostname is 'unknown' or collides across multiple configs."""
+    h = hostname or "unknown"
+    if h == "unknown" or len(files_by_host.get(h, ())) > 1:
+        return f"{h}|{filename or ''}"
+    return h
+
+
+def _stamp_host_keys(findings, device_files=None):
     """Stamp a stable posture/ticket host key onto every finding as ``_host_key``.
 
     Uses the device hostname, but disambiguates with the config filename when the
     hostname is 'unknown' or collides across multiple files (so two distinct boxes
     can't merge in the system of record OR in a SOAR/ticket dedup key). This is the
     SINGLE source of truth: posture groups by ``_host_key`` and ``fv_host`` reads it,
-    so posture, exports, and resolved-closure keys all derive host identically."""
-    from collections import defaultdict
-    files_by_host = defaultdict(set)
+    so posture, exports, and resolved-closure keys all derive host identically.
+
+    ``device_files`` (optional) = the AUTHORITATIVE (hostname, filename) list from the
+    scanned configs. When given, the collision map accounts for EVERY scanned device —
+    including a same-hostname sibling that produced zero findings — so the stamped keys
+    stay consistent with the attestation's per-config enumeration. Falls back to the
+    findings' own (device, device_file) pairs when omitted (used by unit tests)."""
+    if device_files is not None:
+        files_by_host = _host_key_map(device_files)
+    else:
+        files_by_host = _host_key_map((f.get("device"), f.get("device_file")) for f in findings)
     for f in findings:
-        files_by_host[f.get("device", "unknown") or "unknown"].add(f.get("device_file", ""))
-    for f in findings:
-        h = f.get("device", "unknown") or "unknown"
-        if h == "unknown" or len(files_by_host.get(h, ())) > 1:
-            f["_host_key"] = f"{h}|{f.get('device_file', '')}"
-        else:
-            f["_host_key"] = h
+        f["_host_key"] = _host_key_for(f.get("device"), f.get("device_file"), files_by_host)
 
 
 def _update_posture(history_path, exceptions_path, findings, prio_by_id=None):
@@ -411,6 +466,225 @@ def _export_all(args, findings, prio_by_id, deltas):
     if args.ocsf:
         events = nx.build_ocsf(findings, epoch=epoch, prio_by_id=prio_by_id)
         _dump(args.ocsf, events, "OCSF events", len(events))
+
+
+# ── Compliance attestation pack ──────────────────────────────────────────────
+
+NSS_VERSION = "1.0"
+
+# Attestation framework -> benchmark_score() framework name (compliance_map.FRAMEWORKS).
+_ATTEST_FRAMEWORKS = ("CIS", "PCI-DSS", "NIST", "SOC2", "HIPAA", "ISO27001")
+
+
+def _load_attest_key(spec):
+    """Resolve --attest-key into (key_bytes, key_id). 'env:NAME' reads an env var;
+    otherwise a key-file path. The key is NEVER embedded in the bundle (that would
+    defeat the seal). Returns (None, None) when no key was requested."""
+    if not spec:
+        return None, None
+    import os
+    if str(spec).startswith("env:"):
+        name = str(spec)[4:]
+        val = os.environ.get(name)
+        if not val:
+            raise ValueError(f"--attest-key env:{name} is not set")
+        return val.encode("utf-8"), f"env:{name}"
+    with open(spec, "rb") as fh:
+        data = fh.read()
+    if not data:
+        # An empty key must be an ERROR, not a silent downgrade to a keyless (forgeable)
+        # SHA-256 seal — which would then also FAIL verification with the same --attest-key.
+        raise ValueError(f"--attest-key file '{spec}' is empty")
+    return data, f"file:{os.path.basename(spec)}"
+
+
+def _attest_verify_action(path, key_spec):
+    """Verify an attestation bundle's integrity standalone (no scan needed).
+    Exit 0 = intact, 2 = tampered/invalid."""
+    from attestation import verify_attestation
+
+    def _reject_nonfinite(_tok):
+        # json.load accepts NaN/Infinity/-Infinity by default; a canonical, finite bundle
+        # never contains them, so treat their presence as a malformed/hostile bundle.
+        raise ValueError("non-finite number (NaN/Infinity) in bundle")
+
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            bundle = json.load(fh, parse_constant=_reject_nonfinite)
+    except (OSError, ValueError) as exc:
+        print(f"[!] Cannot read attestation bundle '{path}': {exc}", file=sys.stderr)
+        return 2
+    try:
+        key, _ = _load_attest_key(key_spec)
+    except (OSError, ValueError) as exc:
+        print(f"[!] --attest-key: {exc}", file=sys.stderr)
+        return 2
+    res = verify_attestation(bundle, key=key)
+    if res["ok"]:
+        print(f"[+] Attestation INTACT: {res['record_count']} record(s) verified "
+              f"(seal: {res['alg']}).")
+        return 0
+    print(f"[!] Attestation FAILED verification (seal: {res.get('alg')}):", file=sys.stderr)
+    for p in res.get("problems", []):
+        print(f"      - {p}", file=sys.stderr)
+    return 2
+
+
+def _source_artifact(data_dir, filename):
+    """Provenance anchor: hash the raw source config so the sealed bundle is bound to
+    a specific artifact (never tamper-seal fiction). 'looks_truncated' is a light
+    heuristic (a real Cisco config is more than a handful of lines)."""
+    import hashlib as _hl
+    try:
+        p = Path(data_dir) / filename
+        raw = p.read_bytes()
+        text = raw.decode("utf-8", "replace")
+        return {"kind": "cisco-config", "filename": filename,
+                "sha256": _hl.sha256(raw).hexdigest(),
+                "byte_length": len(raw), "line_count": text.count("\n") + 1,
+                "looks_truncated": bool(len(text.strip().splitlines()) < 5),
+                "config_export_utc": None}
+    except OSError:
+        return {"kind": "unknown", "filename": filename, "sha256": None,
+                "byte_length": None, "line_count": None,
+                "looks_truncated": False, "config_export_utc": None}
+
+
+def _intel_snapshot_meta():
+    """Best-effort threat-intel provenance for the attestation envelope (optional)."""
+    try:
+        p = Path(__file__).with_name("threat_intel.json")
+        meta = (json.loads(p.read_text(encoding="utf-8")) or {}).get("meta", {})
+        return {"snapshot_date": meta.get("snapshot_date"),
+                "kev_count": meta.get("kev_count"),
+                "cve_count": meta.get("cve_count")}
+    except Exception:
+        return {}
+
+
+def _save_attestation(args, findings_unfiltered, configs, data_dir):
+    """Emit a tamper-evident FLEET compliance attestation bundle (auditor evidence,
+    NOT a compliance certification). Reuses benchmark_score() for control PASS/FAIL
+    and posture Exceptions for risk-acceptance, so it can never disagree with them.
+    One coverage/results block per device, PASS/FAIL scored against that device's
+    PLATFORM benchmark, grouped by the same disambiguated host key as posture."""
+    try:
+        from attestation import (build_attestation, seal_attestation,
+                                 render_attestation_html, to_oscal)
+        from compliance_map import benchmark_score
+        from posture import Exceptions
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[WARN] attestation module unavailable: {exc}")
+        return
+    from collections import OrderedDict
+
+    try:
+        key, key_id = _load_attest_key(args.attest_key)
+    except (OSError, ValueError) as exc:
+        print(f"[!] --attest-key: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+
+    # Group the unfiltered findings by the SAME stamped host key posture/exports use.
+    groups = OrderedDict()
+    for f in findings_unfiltered:
+        hk = f.get("_host_key") or f.get("device", "unknown") or "unknown"
+        groups.setdefault(hk, []).append(f)
+
+    # Enumerate EVERY scanned config (authoritative device list) — not just devices that
+    # produced findings — so a fully-clean device still gets an attestation block (all
+    # controls PASS) and device_count is honest. Host keys use the same rule as the
+    # stamped findings (seeded from the full config set), so groups line up exactly.
+    files_by_host = _host_key_map([(pc.hostname, fn) for fn, pc in configs])
+    exceptions = Exceptions.load(args.exceptions)
+    devices_input = []
+    seen_hk = set()
+    for fn, pc in configs:
+        hk = _host_key_for(pc.hostname, fn, files_by_host)
+        if hk in seen_hk:
+            continue                      # identical hostname+filename twice — one block
+        seen_hk.add(hk)
+        fs = groups.get(hk, [])
+        platform = str(pc.device_type or "")
+        benchmarks = {}
+        for fw in _ATTEST_FRAMEWORKS:
+            try:
+                bm = benchmark_score(fw, fs, platform=platform or None)
+            except Exception:
+                continue
+            if bm.get("total_controls"):
+                benchmarks[fw] = bm
+        devices_input.append({
+            "host": hk,
+            "device": {"hostname": str(pc.hostname or "unknown"),
+                       "platform": platform or "unknown",
+                       "config_file": fn},
+            "findings": fs,
+            "benchmarks": benchmarks,
+            "source_artifact": _source_artifact(data_dir, fn),
+        })
+
+    unsealed = build_attestation(
+        devices_input,
+        attester_org=args.attest_org,
+        run_mode="offline-config-parse",
+        tool_version=NSS_VERSION,
+        intel=_intel_snapshot_meta(),
+        exceptions=exceptions,
+    )
+    bundle = seal_attestation(unsealed, key=key, key_id=key_id)
+    with open(args.attest, "w", encoding="utf-8") as fh:
+        # Pretty on disk; the seal is over canonical_bytes(body), a SEPARATE
+        # serialization — verify re-canonicalizes, so indentation is irrelevant.
+        json.dump(bundle, fh, indent=2, ensure_ascii=False)
+    print(f"[+] Attestation bundle saved to: {args.attest} "
+          f"(seal: {bundle['seal']['alg']}, {bundle['body']['manifest']['record_count']} records, "
+          f"{len(devices_input)} device(s))")
+    if args.attest_html:
+        with open(args.attest_html, "w", encoding="utf-8") as fh:
+            fh.write(render_attestation_html(bundle))
+        print(f"[+] Attestation statement (HTML) saved to: {args.attest_html}")
+    if args.attest_oscal:
+        with open(args.attest_oscal, "w", encoding="utf-8") as fh:
+            json.dump(to_oscal(bundle["body"]), fh, indent=2, ensure_ascii=False)
+        print(f"[+] OSCAL-aligned assessment-results saved to: {args.attest_oscal}")
+
+
+def _verify_fixes(args, current_findings, prio_by_id):
+    """Remediation-verification loop: classify each finding in a prior --json report
+    as REMEDIATED / PERSISTING / CHANGED given this scan (plus new REGRESSIONS), with
+    before->after evidence and the KB verify command. Prints the report and returns an
+    exit code: 0 = clean (every prior CRITICAL/HIGH remediated, no new CRITICAL/HIGH),
+    else 2. Runs on the UNFILTERED current set so a --severity filter can't mask a
+    persisting/regressed finding."""
+    try:
+        with open(args.verify_against, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as exc:
+        print(f"[!] Could not load prior report '{args.verify_against}': {exc}", file=sys.stderr)
+        return 2
+    raw = doc.get("findings", []) if isinstance(doc, dict) else (doc if isinstance(doc, list) else [])
+    prior = [d for d in raw if isinstance(d, dict)]
+    try:
+        from remediation_verify import build_verification, render_text, render_html
+        from remediation_kb import RemediationKB
+    except Exception as exc:  # pragma: no cover
+        print(f"[WARN] remediation-verify module unavailable: {exc}")
+        return 2
+    report = build_verification(prior, current_findings, kb=RemediationKB(),
+                                prio_by_id=prio_by_id, host="")
+    import os as _os
+    label = _os.path.basename(args.verify_against)
+    print()
+    print(render_text(report, baseline_label=label))
+    if args.verify_json:
+        with open(args.verify_json, "w", encoding="utf-8") as fh:
+            json.dump(report, fh, indent=2, ensure_ascii=False, default=str)
+        print(f"[+] Verification JSON saved to: {args.verify_json}")
+    if args.verify_html:
+        with open(args.verify_html, "w", encoding="utf-8") as fh:
+            fh.write(render_html(report, baseline_label=label))
+        print(f"[+] Verification HTML saved to: {args.verify_html}")
+    return 0 if report["summary"]["clean"] else 2
 
 
 def _save_json(path, findings, scan_meta):
