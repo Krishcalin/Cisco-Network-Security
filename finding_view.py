@@ -123,4 +123,9 @@ def fv_cve(f: Any):
 
 
 def fv_host(f: Any) -> str:
-    return str(_g(f, "host", "") or "unknown")
+    """The posture/ticket host identity. Prefer the disambiguated ``_host_key``
+    (stamped by the scanner so a hostname-less or colliding device gets a unique
+    key) so posture, exports, and closures all agree; else the device hostname."""
+    if isinstance(f, dict):
+        return str(f.get("_host_key") or f.get("device") or f.get("host") or "unknown")
+    return str(getattr(f, "_host_key", None) or _g(f, "host", "") or "unknown")

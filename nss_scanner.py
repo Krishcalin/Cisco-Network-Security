@@ -97,6 +97,15 @@ def main():
         help="Risk-acceptance file (JSON) for --history: accepted findings stop nagging until they expire (fail-open)")
     parser.add_argument("--top", type=int, nargs="?", const=15, default=None, metavar="N",
         help="Print the risk-prioritized fix-first queue (top N, default 15)")
+    parser.add_argument("--jira", metavar="FILE", help="Export ready-to-POST Jira create/update issue payloads")
+    parser.add_argument("--servicenow", metavar="FILE", help="Export ready-to-POST ServiceNow Incident records")
+    parser.add_argument("--splunk-soar", dest="splunk_soar", metavar="FILE", help="Export Splunk SOAR container+artifact payloads")
+    parser.add_argument("--webhook", metavar="FILE", help="Export vendor-neutral CloudEvents 1.0 finding events")
+    parser.add_argument("--sarif", metavar="FILE", help="Export SARIF 2.1.0 (GitHub code-scanning / CI ingestion)")
+    parser.add_argument("--ocsf", metavar="FILE", help="Export OCSF Compliance Finding events (SIEM)")
+    parser.add_argument("--jira-project", dest="jira_project", default="SEC", metavar="KEY", help="Jira project key for --jira (default: SEC)")
+    parser.add_argument("--soar-min-tier", dest="soar_min_tier", choices=["P1", "P2", "P3", "P4"], default="P4",
+        help="Only export findings at/above this priority tier to SOAR/ticketing (default: P4 = all)")
     parser.add_argument("--refresh-intel", dest="refresh_intel", action="store_true",
         help="Refresh the bundled KEV+EPSS threat-intel snapshot from CISA + FIRST.org, then exit (needs internet)")
     parser.add_argument("--export-intel", dest="export_intel", default=None, metavar="FILE",
@@ -148,6 +157,12 @@ def main():
                 f["device_type"] = parsed_config.device_type
             all_findings.extend(findings)
 
+    # Stamp a single disambiguated posture/ticket host key onto every finding so
+    # posture, the exporters, and the resolved-closure keys all derive host
+    # IDENTICALLY. A hostname-less ('unknown') or hostname-colliding device gets a
+    # '<host>|<file>' key so two boxes can't merge and closures line up.
+    _stamp_host_keys(all_findings)
+
     # Capture the FULL, pre-severity-filter finding set. Benchmark scoring,
     # attestation and remediation-verification must run on this (a --severity
     # display filter must never inflate a pass rate or fabricate regressions).
@@ -192,6 +207,10 @@ def main():
     posture_deltas = {}
     if args.history:
         posture_deltas = _update_posture(args.history, args.exceptions, all_findings_unfiltered, prio_by_id)
+
+    # SOAR / SIEM exports (dispatched after posture so resolved findings emit close
+    # events). Export the displayed finding set; min-tier is the additional gate.
+    _export_all(args, all_findings, prio_by_id, posture_deltas)
 
     crit = sum(1 for f in all_findings if f["severity"] == "CRITICAL")
     high = sum(1 for f in all_findings if f["severity"] == "HIGH")
@@ -291,22 +310,24 @@ def _intel_action(args):
         return 1
 
 
-def _posture_host_key(findings):
-    """Return a fn mapping a finding -> a stable posture host key. Uses the device
-    hostname, but disambiguates with the config filename when the hostname is
-    'unknown' or collides across multiple files (so two boxes can't merge in the
-    system of record)."""
+def _stamp_host_keys(findings):
+    """Stamp a stable posture/ticket host key onto every finding as ``_host_key``.
+
+    Uses the device hostname, but disambiguates with the config filename when the
+    hostname is 'unknown' or collides across multiple files (so two distinct boxes
+    can't merge in the system of record OR in a SOAR/ticket dedup key). This is the
+    SINGLE source of truth: posture groups by ``_host_key`` and ``fv_host`` reads it,
+    so posture, exports, and resolved-closure keys all derive host identically."""
     from collections import defaultdict
     files_by_host = defaultdict(set)
     for f in findings:
         files_by_host[f.get("device", "unknown") or "unknown"].add(f.get("device_file", ""))
-
-    def key(f):
+    for f in findings:
         h = f.get("device", "unknown") or "unknown"
         if h == "unknown" or len(files_by_host.get(h, ())) > 1:
-            return f"{h}|{f.get('device_file', '')}"
-        return h
-    return key
+            f["_host_key"] = f"{h}|{f.get('device_file', '')}"
+        else:
+            f["_host_key"] = h
 
 
 def _update_posture(history_path, exceptions_path, findings, prio_by_id=None):
@@ -319,10 +340,9 @@ def _update_posture(history_path, exceptions_path, findings, prio_by_id=None):
         print(f"[WARN] posture module unavailable: {exc}")
         return {}
     from collections import defaultdict
-    keyfn = _posture_host_key(findings)
     groups = defaultdict(list)
     for f in findings:
-        groups[keyfn(f)].append(f)
+        groups[f.get("_host_key") or f.get("device", "unknown") or "unknown"].append(f)
     store = PostureStore(history_path)
     exc = Exceptions.load(exceptions_path)
     deltas = {}
@@ -349,6 +369,48 @@ def _update_posture(history_path, exceptions_path, findings, prio_by_id=None):
     except OSError as exc:
         print(f"    [WARN] could not write history '{history_path}': {exc}")
     return deltas
+
+
+def _export_all(args, findings, prio_by_id, deltas):
+    """Dispatch the SOAR/ticketing + SIEM exports requested on the CLI."""
+    want = (args.jira or args.servicenow or args.splunk_soar or args.webhook
+            or args.sarif or args.ocsf)
+    if not want:
+        return
+    try:
+        import nss_export as nx
+        from remediation_kb import RemediationKB
+    except Exception as exc:  # pragma: no cover
+        print(f"[WARN] export module unavailable: {exc}")
+        return
+    kb = RemediationKB()
+    epoch = int(datetime.datetime.now().timestamp() * 1000)
+    common = dict(prio_by_id=prio_by_id, kb=kb, deltas=deltas,
+                  min_tier=args.soar_min_tier, scan_epoch=epoch)
+
+    def _dump(path, doc, label, count):
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, indent=2, ensure_ascii=False, default=str)
+        print(f"[*] {label}: {path} ({count} item(s))")
+
+    if args.jira:
+        d = nx.build_jira(findings, project_key=args.jira_project, **common)
+        _dump(args.jira, d, "Jira export", len(d["items"]))
+    if args.servicenow:
+        d = nx.build_servicenow(findings, **common)
+        _dump(args.servicenow, d, "ServiceNow export", len(d["items"]))
+    if args.splunk_soar:
+        d = nx.build_splunk_soar(findings, **common)
+        _dump(args.splunk_soar, d, "Splunk SOAR export", len(d["items"]))
+    if args.webhook:
+        d = nx.build_webhook(findings, now_iso=datetime.datetime.now().isoformat(timespec="seconds"), **common)
+        _dump(args.webhook, d, "Webhook export", len(d["items"]))
+    if args.sarif:
+        doc = nx.build_sarif(findings, prio_by_id=prio_by_id)
+        _dump(args.sarif, doc, "SARIF report", len(doc["runs"][0]["results"]))
+    if args.ocsf:
+        events = nx.build_ocsf(findings, epoch=epoch, prio_by_id=prio_by_id)
+        _dump(args.ocsf, events, "OCSF events", len(events))
 
 
 def _save_json(path, findings, scan_meta):
