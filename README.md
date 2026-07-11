@@ -122,14 +122,16 @@ all       — Run everything (default)
 ## CVE Detection
 
 The `cve` module matches the device's detected software version against a
-curated database of 40 published Cisco PSIRT advisories (2018–2026) covering:
+curated database of 54 published Cisco PSIRT advisories (2014–2026, 21 CISA-KEV
+actively-exploited) covering:
 
 | Platform | Headline CVEs |
 |----------|---------------|
 | **ASA / FTD** | ArcaneDoor trio (CVE-2025-20333 / 20362 / 20363), persistent local RCE (CVE-2024-20359), WebVPN path traversal (CVE-2020-3452), info-disclosure (CVE-2020-3259), WebVPN double-free (CVE-2018-0101) |
-| **IOS / IOS-XE** | BadCandy chain (CVE-2023-20198 + 20273), SNMP RCE (CVE-2025-20352), Wireless AP-image RCE (CVE-2025-20188), GET VPN RCE (CVE-2023-20109) |
-| **NX-OS** | Velvet Ant CLI injection (CVE-2024-20399), Python / Bash sandbox escapes (CVE-2024-20271 / 20272), image-signature bypass |
-| **WLC** | Catalyst 9800 auth bypass (CVE-2022-20695), IPv6 DoS, CAPWAP DTLS DoS |
+| **IOS / IOS-XE** | BadCandy chain (CVE-2023-20198 + 20273), Smart Install RCE (CVE-2018-0171, Salt Typhoon), SNMP RCE (CVE-2025-20352 / CVE-2017-6742), HTTP API command injection (CVE-2025-20334), TACACS+ auth bypass (CVE-2025-20160) |
+| **NX-OS** | Velvet Ant CLI injection (CVE-2024-20399), Python / Bash sandbox escapes (CVE-2024-20271 / 20272), image-signature bypass, eBGP / DHCPv6 / health-diagnostics DoS |
+| **ASA / FTD (historical KEV)** | EXTRABACON SNMP RCE (CVE-2016-6366), WebVPN path traversal (CVE-2018-0296), web-services XSS (CVE-2020-3580), WebVPN login XSS (CVE-2014-2120), SSH command injection (CVE-2024-20329), static credentials (CVE-2024-20412) |
+| **WLC** | AireOS management auth bypass (CVE-2022-20695, AireOS 8.10 only), CAPWAP / mDNS / CDP DoS |
 
 Version detection works on the `show version` output included in the config
 file (`Cisco IOS XE Software, Version 17.09.04` → train `17.9`; `ASA Version
@@ -282,7 +284,7 @@ Network-Security-Scanner-NSS/
 ├── attestation.py                  # tamper-evident fleet compliance attestation + OSCAL
 ├── tests/                          # pytest suite (102 tests)
 ├── .github/workflows/ci.yml        # CI: pytest (py3.8–3.12) + capability smoke tests
-├── sample_configs/                 # Demo device configs (7 devices, ~290 findings)
+├── sample_configs/                 # Demo device configs (7 devices, ~256 findings)
 │   ├── router_core.cfg            # IOS 15.7 router with classic hardening gaps
 │   ├── switch_access.cfg          # IOS access switch with switching weaknesses
 │   ├── catalyst_9300_outdated.cfg # IOS-XE 17.9 — BadCandy + SNMP RCE + AP-image RCE

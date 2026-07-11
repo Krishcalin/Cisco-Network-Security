@@ -310,32 +310,6 @@ CISCO_CVES: List[Dict[str, Any]] = [
         "kev": False, "exploited": False, "cwe": "CWE-287",
     },
     {
-        "id": "CISCO-CVE-019", "cve": "CVE-2023-20025", "severity": "CRITICAL",
-        "cvss": 9.8,
-        "title": "Small Business RV016/RV042/RV082/RV320/RV325 — auth bypass",
-        "description": "Improper validation of user input in the web management "
-                       "interface lets a remote attacker bypass authentication and "
-                       "execute arbitrary commands as root.",
-        "platforms": ["ios"],
-        "trains": ["4.x", "1.x"],
-        "fixed_advice": "These RV products are end-of-life; replace with a supported platform.",
-        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-sb-rv-overflow-WUnUgv4U",
-        "kev": True, "exploited": True, "cwe": "CWE-287",
-    },
-    {
-        "id": "CISCO-CVE-020", "cve": "CVE-2021-1414", "severity": "CRITICAL",
-        "cvss": 8.1,
-        "title": "Small Business 220 Series switches — auth bypass and RCE",
-        "description": "Insufficient validation of HTTP requests lets a remote "
-                       "unauthenticated attacker bypass authentication and execute "
-                       "arbitrary code on Cisco Small Business 220 Series switches.",
-        "platforms": ["ios"],
-        "trains": ["1.x"],
-        "fixed_advice": "Upgrade firmware to 1.2.0.6 or later.",
-        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-sb220-multi-7teLepwz",
-        "kev": False, "exploited": False, "cwe": "CWE-287",
-    },
-    {
         "id": "CISCO-CVE-021", "cve": "CVE-2024-20481", "severity": "HIGH",
         "cvss": 5.8,
         "title": "ASA/FTD Remote Access VPN denial of service via excessive auth requests",
@@ -381,29 +355,19 @@ CISCO_CVES: List[Dict[str, Any]] = [
     {
         "id": "CISCO-CVE-024", "cve": "CVE-2022-20695", "severity": "CRITICAL",
         "cvss": 10.0,
-        "title": "WLC 9800 / AireOS — authentication bypass",
+        "title": "WLC AireOS — management interface authentication bypass",
         "description": "Improper implementation of the password validation "
-                       "algorithm in the Cisco Wireless LAN Controller (9800, AireOS) "
-                       "lets a remote attacker log in to the WLC management interface "
-                       "with elevated privileges if a specific configuration exists.",
+                       "algorithm in Cisco Wireless LAN Controller AireOS Software "
+                       "lets an unauthenticated remote attacker log in to the WLC "
+                       "management interface with elevated privileges. Vulnerable "
+                       "only on AireOS 8.10.151.0 / 8.10.162.0 with macfilter RADIUS "
+                       "compatibility set to 'Other' (non-default). Catalyst 9800 / "
+                       "IOS-XE are NOT affected per the advisory.",
         "platforms": ["wlc"],
-        "trains": ["8.10", "16.12", "17.3", "17.6", "17.9"],
-        "fixed_advice": "Upgrade to 17.3.4c / 17.6.2 / 17.9.1 or later; review macfilter-radius config.",
-        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-wlc-auth-bypass-JBkahkhd",
+        "trains": ["8.10"],
+        "fixed_advice": "Upgrade AireOS to 8.10.171.0 or later; or reset macfilter radius compatibility from 'Other' to the default. AireOS only — Catalyst 9800 IOS-XE not affected.",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-wlc-auth-bypass-JRNhV4fF",
         "kev": False, "exploited": False, "cwe": "CWE-287",
-    },
-    {
-        "id": "CISCO-CVE-025", "cve": "CVE-2023-20025", "severity": "HIGH",
-        "cvss": 7.5,
-        "title": "WLC 9800 IPv6 packet processing denial of service",
-        "description": "Improper handling of certain IPv6 packets on the management "
-                       "interface lets an unauthenticated adjacent attacker cause "
-                       "the WLC to crash and reload.",
-        "platforms": ["wlc", "iosxe"],
-        "trains": ["17.3", "17.6", "17.9"],
-        "fixed_advice": "Upgrade per the advisory.",
-        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-wlc-ipv6-dos-LjJ7B5SR",
-        "kev": False, "exploited": False, "cwe": "CWE-754",
     },
     {
         "id": "CISCO-CVE-026", "cve": "CVE-2024-20356", "severity": "HIGH",
@@ -590,18 +554,317 @@ CISCO_CVES: List[Dict[str, Any]] = [
         "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-uiws-multi-c6OWyQVx",
         "kev": False, "exploited": False, "cwe": "CWE-78",
     },
+
+    # ─── CVE freshness pack (2024-2026 + historical KEV) — PSIRT/NVD-verified ────
+    # Added by a primary-source research + adversarial-verify pass; each entry was
+    # confirmed against the Cisco PSIRT advisory and NVD (KEV flag vs the CISA feed).
     {
-        "id": "CISCO-CVE-040", "cve": "CVE-2022-20695", "severity": "CRITICAL",
-        "cvss": 10.0,
-        "title": "WLC RADIUS authentication bypass via macfilter",
-        "description": "Improper password validation when the WLC is configured to "
-                       "use macfilter-radius authentication lets a remote attacker "
-                       "log in as any user with full admin rights.",
-        "platforms": ["wlc"],
-        "trains": ["8.10", "16.12", "17.3", "17.6"],
-        "fixed_advice": "Upgrade per advisory; avoid macfilter-radius as a primary admin auth method.",
-        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-wlc-auth-bypass-JBkahkhd",
+        "id": "CISCO-CVE-041", "cve": "CVE-2024-20329", "severity": "CRITICAL",
+        "cvss": 9.9,
+        "title": "Cisco ASA Software SSH Remote Command Injection",
+        "description": (
+            "Insufficient input validation in the SSH subsystem (CiscoSSH "
+            "stack) of Cisco ASA Software lets an authenticated, remote "
+            "attacker with limited privileges submit crafted input to remote "
+            "CLI commands over SSH and execute OS commands as root, gaining "
+            "full control of the device. Requires the CiscoSSH stack enabled "
+            "and SSH allowed on at least one interface. Workaround: 'no ssh "
+            "stack ciscossh'."
+        ),
+        "platforms": ["asa"], "trains": ["9.17", "9.18", "9.19"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-asa-ssh-rce-gRAuPEUF",
+        "kev": False, "exploited": False, "cwe": "CWE-146",
+    },
+    {
+        "id": "CISCO-CVE-042", "cve": "CVE-2024-20412", "severity": "CRITICAL",
+        "cvss": 9.3,
+        "title": "Cisco FTD Software (Firepower 1000/2100/3100/4200) Static Credential Vulnerability",
+        "description": (
+            "FTD Software for Firepower 1000, 2100, 3100 and 4200 Series ships "
+            "with static accounts using hard-coded passwords (e.g. "
+            "csm_processes, report, sftop10user, Sourcefire, SRU). An "
+            "unauthenticated, local attacker with serial-port or SSH access to "
+            "the management/data interfaces can log in with these credentials "
+            "to read sensitive information, perform limited troubleshooting, "
+            "modify some configuration, or render the device unable to boot "
+            "(requiring reimage). Fixed by upgrading or installing VDB Release "
+            "388 or later."
+        ),
+        "platforms": ["ftd"], "trains": ["7.1", "7.2", "7.3", "7.4"],
+        "fixed_advice": "Upgrade to fixed FTD release or install VDB 388+ (no reload required)",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-ftd-statcred-dFC8tXT5",
+        "kev": False, "exploited": False, "cwe": "CWE-259",
+    },
+    {
+        "id": "CISCO-CVE-043", "cve": "CVE-2025-20334", "severity": "HIGH",
+        "cvss": 8.8,
+        "title": "Cisco IOS XE Software HTTP API Command Injection Vulnerability",
+        "description": (
+            "A command injection flaw in the HTTP API subsystem of Cisco IOS XE "
+            "Software lets an attacker inject commands that execute with root "
+            "privileges due to insufficient input validation. Exploitable by an "
+            "authenticated attacker with admin credentials via crafted API "
+            "calls, or unauthenticated by tricking a logged-in admin into "
+            "clicking a malicious link. The HTTP Server feature must be "
+            "enabled. Fixed in the 17.16 train."
+        ),
+        "platforms": ["iosxe"], "trains": ["17.9", "17.12", "17.13", "17.14", "17.15", "17.16"],
+        "fixed_advice": "Disable the HTTP Server if unused (no ip http server / no ip http secure-server); otherwise upgrade to a fixed IOS XE release (17.16.x fixed train) per advisory. Affected versions 17.9.5 through 17.16.1a.",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-ios-xe-cmd-inject-rPJM8BGL",
+        "kev": False, "exploited": False, "cwe": "CWE-77",
+    },
+    {
+        "id": "CISCO-CVE-044", "cve": "CVE-2025-20160", "severity": "HIGH",
+        "cvss": 8.1,
+        "title": "Cisco IOS and IOS XE Software TACACS+ Authentication Bypass Vulnerability",
+        "description": (
+            "The TACACS+ protocol implementation in Cisco IOS and IOS XE "
+            "Software fails to verify that the required TACACS+ shared secret "
+            "is configured. When a device is configured to use TACACS+ but a "
+            "shared secret is missing, an unauthenticated remote attacker "
+            "positioned for MITM can view sensitive data in TACACS+ messages or "
+            "bypass authentication and gain access to the device."
+        ),
+        "platforms": ["ios", "iosxe"], "trains": ["15.2", "15.5"],
+        "fixed_advice": "Configure a shared secret (key) for every tacacs-server / tacacs server host on the device as a mitigation; upgrade per advisory. NVD-confirmed classic-IOS trains 15.2/15.5; IOS XE 17.x trains also affected - see advisory Software Checker.",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-ios-tacacs-hdB7thJw",
         "kev": False, "exploited": False, "cwe": "CWE-287",
+    },
+    {
+        "id": "CISCO-CVE-045", "cve": "CVE-2024-20446", "severity": "HIGH",
+        "cvss": 8.6,
+        "title": "Cisco NX-OS DHCPv6 Relay Agent Denial of Service Vulnerability",
+        "description": (
+            "Improper handling of specific fields in a DHCPv6 RELAY-REPLY "
+            "message lets an unauthenticated, remote attacker crash the "
+            "dhcp_snoop process by sending a crafted DHCPv6 packet to any IPv6 "
+            "address configured on the device, forcing repeated reloads (DoS). "
+            "Vulnerable only when the DHCPv6 relay agent is enabled and at "
+            "least one IPv6 address is configured. Affects Nexus 3000/7000 and "
+            "Nexus 9000 in standalone NX-OS mode."
+        ),
+        "platforms": ["nxos"], "trains": ["8.2", "9.3", "10.2"],
+        "fixed_advice": "Upgrade to a fixed release (see advisory / Cisco Software Checker); temporary mitigation: disable DHCPv6 relay with 'no ipv6 dhcp relay'",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-nxos-dhcp6-relay-dos-znEAA6xn",
+        "kev": False, "exploited": False, "cwe": "CWE-476",
+    },
+    {
+        "id": "CISCO-CVE-046", "cve": "CVE-2024-20321", "severity": "HIGH",
+        "cvss": 8.6,
+        "title": "Cisco NX-OS External BGP (eBGP) Denial of Service Vulnerability",
+        "description": (
+            "eBGP traffic is mapped to a shared hardware rate-limiter queue, "
+            "allowing an unauthenticated, remote attacker to send a high rate "
+            "of specific traffic that exhausts the queue and disrupts eBGP "
+            "peering, causing a DoS. Affects Nexus 3600 Series and Nexus 9500 "
+            "R-Series line cards (N3K-C36180YC-R, N3K-C3636C-R, N9K-X9624D-R2, "
+            "N9K-X9636C-R/-RX, N9K-X9636Q-R, N9K-X96136YC-R)."
+        ),
+        "platforms": ["nxos"], "trains": ["9.3", "10.2", "10.3"],
+        "fixed_advice": "Fixed via SMU/upgrade at 9.3(12), 10.2(6), 10.3(4a) — see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-nxos-ebgp-dos-L3QCwVJ",
+        "kev": False, "exploited": False, "cwe": "CWE-400",
+    },
+    {
+        "id": "CISCO-CVE-047", "cve": "CVE-2025-20111", "severity": "HIGH",
+        "cvss": 7.4,
+        "title": "Cisco Nexus 3000/9000 Health Monitoring Diagnostics Denial of Service Vulnerability",
+        "description": (
+            "Incorrect handling of specific Ethernet frames in the health "
+            "monitoring diagnostics (L2ACLRedirect and RewriteEngineLoopback "
+            "tests) lets an unauthenticated, adjacent (Layer 2) attacker send a "
+            "sustained rate of crafted Ethernet frames to reload the device, "
+            "resulting in DoS. Affects Nexus 3100/3200/3400/3600 and Nexus "
+            "9200/9300/9400 in standalone NX-OS mode."
+        ),
+        "platforms": ["nxos"], "trains": ["9.3", "9.4", "10.1", "10.2", "10.3", "10.4"],
+        "fixed_advice": "see advisory; use Cisco Software Checker for platform-specific fixed release",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-n3kn9k-healthdos-eOqSWK4g",
+        "kev": False, "exploited": False, "cwe": "CWE-1220",
+    },
+    {
+        "id": "CISCO-CVE-048", "cve": "CVE-2026-20086", "severity": "HIGH",
+        "cvss": 8.6,
+        "title": "Cisco IOS XE Wireless Controller (Catalyst CW9800) CAPWAP Denial of Service",
+        "description": (
+            "Improper handling of a malformed CAPWAP packet in Cisco IOS XE "
+            "Wireless Controller Software for the Catalyst CW9800 family "
+            "(CW9800H/CW9800M) lets an unauthenticated, remote attacker send a "
+            "crafted CAPWAP packet to force an unexpected device reload, "
+            "causing a DoS. Network-reachable (AV:N), no auth, no user "
+            "interaction."
+        ),
+        "platforms": ["iosxe", "wlc"], "trains": ["17.14", "17.15", "17.16", "17.17", "17.18"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-wlc-dos-hnX5KGOm",
+        "kev": False, "exploited": False, "cwe": "CWE-230",
+    },
+    {
+        "id": "CISCO-CVE-049", "cve": "CVE-2024-20303", "severity": "HIGH",
+        "cvss": 7.4,
+        "title": "Cisco IOS XE WLC Multicast DNS (mDNS) Gateway Denial of Service",
+        "description": (
+            "Improper handling of mDNS client entries in the multicast DNS "
+            "gateway feature of Cisco IOS XE Software for Wireless LAN "
+            "Controllers lets an unauthenticated, adjacent attacker (connected "
+            "to the wireless network) send continuous crafted mDNS packets, "
+            "driving high controller CPU that can disconnect APs and cause a "
+            "DoS. Vulnerable only when mDNS gateway is enabled and APs are in "
+            "FlexConnect mode. AireOS not affected."
+        ),
+        "platforms": ["iosxe", "wlc"], "trains": ["17.2", "17.3", "17.4", "17.5", "17.6", "17.7"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-wlc-mdns-dos-4hv6pBGf",
+        "kev": False, "exploited": False, "cwe": "CWE-459",
+    },
+    {
+        "id": "CISCO-CVE-050", "cve": "CVE-2025-20202", "severity": "HIGH",
+        "cvss": 7.4,
+        "title": "Cisco IOS XE Wireless Controller Cisco Discovery Protocol (CDP) Denial of Service",
+        "description": (
+            "Insufficient input validation of access point (AP) CDP neighbor "
+            "reports processed by Cisco IOS XE Wireless Controller Software "
+            "lets an unauthenticated, adjacent attacker send crafted CDP "
+            "packets to an AP, triggering an unexpected controller reload and a "
+            "DoS. Affects Catalyst 9800 series/9800-CL/embedded WLCs. Temporary "
+            "mitigation: disable CDP on AP profiles."
+        ),
+        "platforms": ["iosxe", "wlc"], "trains": ["16.10", "16.11", "16.12", "17.1"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-ewlc-cdp-dos-fpeks9K",
+        "kev": False, "exploited": False, "cwe": "CWE-805",
+    },
+    {
+        "id": "CISCO-CVE-051", "cve": "CVE-2024-20397", "severity": "MEDIUM",
+        "cvss": 5.2,
+        "title": "Cisco NX-OS Software Image Verification Bypass Vulnerability",
+        "description": (
+            "Insecure bootloader settings allow an unauthenticated attacker "
+            "with physical access, or an authenticated local attacker with "
+            "admin credentials, to run a series of bootloader commands that "
+            "bypass NX-OS image signature verification and load "
+            "unverified/unsigned software. Affects MDS 9000, Nexus "
+            "3000/7000/9000, and UCS 6400/6500 Fabric Interconnects that "
+            "support secure boot. Remediation requires a BIOS update; no "
+            "workaround."
+        ),
+        "platforms": ["nxos"], "trains": ["9.3", "9.4", "10.2", "10.3", "10.4", "10.5"],
+        "fixed_advice": "Requires BIOS update via 'install all' or release-independent BIOS upgrade script — see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-nxos-image-sig-bypas-pQDRQvjL",
+        "kev": False, "exploited": False, "cwe": "CWE-284",
+    },
+    {
+        "id": "CISCO-CVE-052", "cve": "CVE-2025-20161", "severity": "MEDIUM",
+        "cvss": 5.1,
+        "title": "Cisco Nexus 3000/9000 Software Upgrade Command Injection Vulnerability",
+        "description": (
+            "Insufficient validation of image elements during the software "
+            "upgrade process lets an authenticated local attacker with "
+            "Administrator credentials install a crafted software image and "
+            "execute arbitrary commands as root on the underlying OS. Affects "
+            "Nexus 3000 and Nexus 9000 Series in standalone NX-OS mode. "
+            "Mitigation: validate image hashes before installation."
+        ),
+        "platforms": ["nxos"], "trains": ["10.2", "10.3", "10.4", "10.5"],
+        "fixed_advice": "see advisory / Cisco Software Checker",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-nxos-ici-dpOjbWxk",
+        "kev": False, "exploited": False, "cwe": "CWE-78",
+    },
+    {
+        "id": "CISCO-CVE-053", "cve": "CVE-2018-0171", "severity": "CRITICAL",
+        "cvss": 9.8,
+        "title": "Cisco IOS and IOS XE Software Smart Install Remote Code Execution Vulnerability",
+        "description": (
+            "Improper validation of packet data in the Smart Install client "
+            "feature allows an unauthenticated remote attacker sending crafted "
+            "messages to TCP/4786 to cause a buffer overflow, reloading the "
+            "device (DoS) or executing arbitrary code. Actively exploited "
+            "(including by Salt Typhoon against unpatched switches); on CISA "
+            "KEV."
+        ),
+        "platforms": ["ios", "iosxe"], "trains": ["*"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20180328-smi2",
+        "kev": True, "exploited": True, "cwe": "CWE-787",
+    },
+    {
+        "id": "CISCO-CVE-054", "cve": "CVE-2018-0296", "severity": "HIGH",
+        "cvss": 7.5,
+        "title": "Cisco ASA and FTD Software Web Services Path Traversal / Denial of Service Vulnerability",
+        "description": (
+            "Insufficient HTTP URL input validation in the WebVPN/web services "
+            "interface lets an unauthenticated remote attacker use directory "
+            "traversal to crash the device (DoS) or read sensitive filesystem "
+            "information (e.g., active session details). On CISA KEV."
+        ),
+        "platforms": ["asa", "ftd"], "trains": ["9.1", "9.2", "9.4", "9.6", "9.7", "9.8", "9.9", "6.0", "6.1", "6.2"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20180606-asaftd",
+        "kev": True, "exploited": True, "cwe": "CWE-22",
+    },
+    {
+        "id": "CISCO-CVE-055", "cve": "CVE-2016-6366", "severity": "HIGH",
+        "cvss": 8.8,
+        "title": "Cisco ASA SNMP Remote Code Execution Vulnerability (EXTRABACON)",
+        "description": (
+            "A buffer overflow in the SNMP subsystem of Cisco ASA software "
+            "allows a remote attacker who knows the SNMP community string to "
+            "send crafted SNMP packets and execute arbitrary code or reload the "
+            "device. Weaponized by the Equation Group EXTRABACON exploit; on "
+            "CISA KEV. Requires SNMP configured (v1/v2c) and reachable."
+        ),
+        "platforms": ["asa"], "trains": ["8.2", "8.3", "8.4", "8.5", "8.6", "8.7", "9.0", "9.1", "9.2", "9.3", "9.4"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20160817-asa-snmp",
+        "kev": True, "exploited": True, "cwe": "CWE-120",
+    },
+    {
+        "id": "CISCO-CVE-056", "cve": "CVE-2017-6742", "severity": "HIGH",
+        "cvss": 8.8,
+        "title": "Cisco IOS and IOS XE Software SNMP Remote Code Execution Vulnerability",
+        "description": (
+            "A buffer overflow in the SNMP subsystem of Cisco IOS/IOS XE allows "
+            "an authenticated remote attacker (knowing the SNMP community "
+            "string / v3 credentials) to send crafted SNMP packets to execute "
+            "arbitrary code or reload the device. One of the SNMP RCE cluster "
+            "in cisco-sa-20170629-snmp; on CISA KEV."
+        ),
+        "platforms": ["ios", "iosxe"], "trains": ["12.4", "15.0", "15.1", "15.2", "15.3", "15.4", "15.5", "15.6", "3.16", "3.17"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20170629-snmp",
+        "kev": True, "exploited": True, "cwe": "CWE-119",
+    },
+    {
+        "id": "CISCO-CVE-057", "cve": "CVE-2014-2120", "severity": "MEDIUM",
+        "cvss": 6.1,
+        "title": "Cisco ASA WebVPN Login Page Cross-Site Scripting Vulnerability",
+        "description": (
+            "Insufficient input validation on the ASA WebVPN login page allows "
+            "an unauthenticated remote attacker to conduct reflected XSS by "
+            "luring a user to a crafted link. Cisco PSIRT reported renewed in- "
+            "the-wild exploitation in Nov 2024 (AndroxGh0st botnet); CISA added "
+            "it to KEV on 2024-11-12."
+        ),
+        "platforms": ["asa"], "trains": ["*"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-CVE-2014-2120",
+        "kev": True, "exploited": True, "cwe": "CWE-79",
+    },
+    {
+        "id": "CISCO-CVE-058", "cve": "CVE-2020-3580", "severity": "MEDIUM",
+        "cvss": 6.1,
+        "title": "Cisco ASA and FTD Software Web Services Interface Cross-Site Scripting Vulnerability",
+        "description": (
+            "Insufficient validation of user-supplied input in the ASA/FTD web "
+            "services interface allows an unauthenticated remote attacker to "
+            "conduct XSS attacks against a user of the interface via a crafted "
+            "link. On CISA KEV; public PoCs and mass scanning observed."
+        ),
+        "platforms": ["asa", "ftd"], "trains": ["9.7", "9.8", "9.9", "9.10", "9.12", "9.13", "9.14", "9.15", "6.4", "6.6", "6.7"],
+        "fixed_advice": "see advisory",
+        "advisory": "https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-asaftd-xss-multiple-FCB3vPZe",
+        "kev": True, "exploited": True, "cwe": "CWE-79",
     },
 ]
 

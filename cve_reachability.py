@@ -58,6 +58,14 @@ CVE_COMPONENT: Dict[str, str] = {
     "CVE-2018-0101": "webvpn-ssl",
     # IOS/IOS-XE SNMP stack (SNMP must be configured).
     "CVE-2025-20352": "snmp",
+    # ── freshness-pack additions (PSIRT/NVD-verified) ──
+    "CVE-2025-20334": "web-ui",       # IOS-XE HTTP API command injection — HTTP server on
+    "CVE-2018-0171": "smart-install",  # Smart Install RCE — vstack on (TCP/4786)
+    "CVE-2018-0296": "webvpn-ssl",     # ASA/FTD WebVPN path traversal
+    "CVE-2016-6366": "snmp",           # ASA SNMP RCE (EXTRABACON)
+    "CVE-2017-6742": "snmp",           # IOS/IOS-XE SNMP RCE
+    "CVE-2014-2120": "webvpn-ssl",     # ASA WebVPN login XSS
+    "CVE-2020-3580": "webvpn-ssl",     # ASA/FTD web services XSS
 }
 
 

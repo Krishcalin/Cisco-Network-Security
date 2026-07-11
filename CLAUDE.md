@@ -30,7 +30,7 @@ nss_scanner.py                 # CLI entry, MODULE_MAP, run loop
     ├── ngfw_platform.py       # 7  checks — FTD mgmt, accounts, FXOS, DNS
     ├── logging.py             # 10 checks — syslog, SNMP traps, NetFlow, archive
     ├── crypto.py              # 10 checks — SSH keys, TLS, IPsec, ISAKMP, DH
-    ├── cve_detection.py       # 40 published Cisco CVEs (2018-2026)
+    ├── cve_detection.py       # 54 published Cisco CVEs (2014-2026, 21 CISA-KEV)
     └── report_generator.py    # Dark-theme HTML dashboard
 ```
 
@@ -116,7 +116,7 @@ Cisco PSIRT advisories.
 
 ### Database (`CISCO_CVES`)
 
-40 entries (2018-2026) covering CRITICAL/HIGH/MEDIUM CVEs across:
+54 entries (2014-2026, 21 CISA-KEV actively-exploited) covering CRITICAL/HIGH/MEDIUM CVEs across:
 
 - **ASA / FTD** — ArcaneDoor (CVE-2025-20333/20362/20363), persistent local RCE
   (CVE-2024-20359), WebVPN path traversal (CVE-2020-3452), info-disclosure
@@ -197,8 +197,8 @@ coverage even when no CVEs match:
 | `wlc_9800_outdated.cfg` | WLC (IOS-XE) | 17.9 | AP image download RCE, WLC auth bypass, CAPWAP DTLS DoS |
 | `ftd_firewall.cfg` | FTD | 7.2 | ArcaneDoor trio, FTD-specific checks |
 
-Running all modules across all samples produces 246 findings (17 CRITICAL,
-78 HIGH, 81 MEDIUM, 33 LOW, 37 INFO meta-notices marking modules skipped due
+Running all modules across all samples produces 256 findings (21 CRITICAL,
+82 HIGH, 83 MEDIUM, 33 LOW, 37 INFO meta-notices marking modules skipped due
 to platform mismatch) — a useful end-to-end smoke test. The 37 INFO entries
 are the cross-platform skip notices: e.g. switch-security and IOS-mgmt
 modules correctly skipped on ASA/NX-OS/FTD samples.
