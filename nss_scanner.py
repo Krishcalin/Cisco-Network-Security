@@ -218,6 +218,17 @@ def main():
         _save_json(args.json_out, all_findings, scan_meta)
         print(f"[*] JSON findings report: {args.json_out}")
 
+    # CVE reachability: stamp a per-finding verdict (is the vulnerable feature enabled
+    # on THIS device's config?) so the prioritizer downranks — never suppresses — a CVE
+    # whose feature is off, while the CISA-KEV floor still holds. Per device (multi-device).
+    try:
+        from cve_reachability import stamp_reachability
+        n_reach = stamp_reachability(configs, all_findings_unfiltered)
+        if n_reach:
+            print(f"[*] CVE reachability: {n_reach} finding(s) gated by config (feature enabled/disabled)")
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[WARN] CVE reachability unavailable: {exc}")
+
     # Risk-prioritization overlay (P1-P4). Computed on the FULL set so a --severity
     # display filter can't weaken the exposure signal; keyed by id(finding) for the
     # posture SLA/weaponization pass and later exporters.

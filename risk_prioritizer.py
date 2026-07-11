@@ -263,6 +263,14 @@ class RiskPrioritizer:
             if isinstance(rec, dict):
                 verdict = rec.get("verdict")
                 evidence = rec.get("evidence", "") or ""
+        # NSS is multi-device: the same CVE on two boxes can have different reachability,
+        # so cve_reachability.stamp_reachability() writes a PER-FINDING verdict. Prefer the
+        # flat map (Fortinet-style, if a caller passes one), else the stamped per-finding one.
+        if verdict is None and isinstance(f, dict):
+            rec = f.get("_cve_reach")
+            if isinstance(rec, dict):
+                verdict = rec.get("verdict")
+                evidence = rec.get("evidence", "") or ""
 
         exp_pts, source = 0, None
         reach_note = ""
